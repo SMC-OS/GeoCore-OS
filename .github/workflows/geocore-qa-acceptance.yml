@@ -140,6 +140,9 @@ jobs:
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
           printf '%s' "stone-gate-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
           printf '%s' "QA acceptance B $RUN" | set_qa_var QA_OWNER_B_COMPANY
+          printf '%s' "$PW_B" | set_qa_var QA_OWNER_B_PW
+          # Check all required names exist before changing the start command; never print values.
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e '[.QA_PROVISION_PY_B64,.QA_PROVISION_SH_B64,.QA_OWNER_A_EMAIL,.QA_OWNER_A_COMPANY,.QA_OWNER_A_PW,.QA_OWNER_B_EMAIL,.QA_OWNER_B_COMPANY,.QA_OWNER_B_PW] | all(type == "string" and length > 0)' >/dev/null
           start_set "$QA_PROVISION_START"
           [[ "$(start_get)" == "$QA_PROVISION_START" ]]
           deploy_current_config() {
