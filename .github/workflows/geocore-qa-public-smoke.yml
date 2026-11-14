@@ -37,6 +37,9 @@ jobs:
           }
           check api_health "$API/health"
           check api_ready "$API/ready"
+          admission="$(curl -fsS --max-time 30 "$API/api/v1/auth/admission" | jq -er '.signups_open | tostring')"
+          printf 'api_signups_open=%s\n' "$admission" | tee -a qa-public-smoke/results.txt
+          [[ "$admission" == false ]] || { echo "STOP: isolated QA admission is not closed"; exit 1; }
           check frontend_home "$WEB/"
           check frontend_login "$WEB/login"
 
