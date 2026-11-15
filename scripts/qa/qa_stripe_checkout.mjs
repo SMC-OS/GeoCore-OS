@@ -105,7 +105,14 @@ try {
         const email = await find('input[autocomplete="email"], input[name="email"], #email', 3000);
         if (email && (await email.inputValue().catch(() => "")) === "" && process.env.EXPECT_EMAIL) await email.fill(process.env.EXPECT_EMAIL);
         step = "submit";
-        await page.locator('button[type="submit"]').first().click({ timeout: 15000 });
+        // Stripe's hosted pay button is not reliably type=submit: try its test id and class, then any button named like the action.
+        let pay = await find('[data-testid="hosted-payment-submit-button"], button.SubmitButton, button[type="submit"]', 20000);
+        if (!pay) {
+          const byRole = page.getByRole("button", { name: /subscribe|pay|start trial|confirm/i }).first();
+          if ((await byRole.count()) > 0) pay = byRole;
+        }
+        if (!pay) { await diag("pay button not found"); await browser.close(); process.exit(0); }
+        await pay.click({ timeout: 15000 });
         const result = await Promise.race([
           page.waitForURL((u) => u.hostname !== "checkout.stripe.com", { timeout: 90000 }).then(() => "complete"),
           page.getByText(/card was declined|payment failed|declined/i).first().waitFor({ state: "visible", timeout: 90000 }).then(() => "declined"),
