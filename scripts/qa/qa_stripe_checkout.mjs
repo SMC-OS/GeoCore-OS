@@ -21,7 +21,32 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
   page.setDefaultTimeout(45000);
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  // Navigation facts for diagnosis (hosts and counts only; never URLs, emails or payloads).
+  const failedHosts = new Set();
+  const pageErrors = [];
+  page.on("requestfailed", (r) => { try { failedHosts.add(new URL(r.url()).hostname); } catch (_) {} });
+  page.on("pageerror", (e) => { if (pageErrors.length < 3) pageErrors.push(String(e && e.name ? e.name : "error")); });
+  let navStatus = "none";
+  let navError = "";
+  try {
+    const resp = await page.goto(url, { waitUntil: "commit", timeout: 60000 });
+    navStatus = resp ? String(resp.status()) : "no-response";
+  } catch (e) {
+    navError = String(e && e.name ? e.name : "error");
+  }
+  await page.waitForTimeout(10000);
+  if (mode !== "portal") {
+    const title = (await page.title().catch(() => "")).slice(0, 60);
+    const bodyLen = (await page.locator("body").innerText().catch(() => "")).length;
+    const nav = `nav_status=${navStatus} nav_error=${navError || "none"} title=${JSON.stringify(title)} body_chars=${bodyLen} failed_hosts=${JSON.stringify([...failedHosts].slice(0, 6))} page_errors=${JSON.stringify(pageErrors)}`;
+    if (navError || bodyLen < 50) {
+      await page.screenshot({ path: "qa-stripe-checkout-diag.png", fullPage: true }).catch(() => {});
+      out("blocked", "checkout page did not render; " + nav);
+      await browser.close();
+      process.exit(0);
+    }
+    console.error("nav ok: " + nav);
+  }
 
   if (mode === "portal") {
     await page.waitForLoadState("networkidle").catch(() => {});
