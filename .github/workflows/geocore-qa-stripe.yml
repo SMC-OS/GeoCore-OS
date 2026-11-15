@@ -2,6 +2,12 @@ name: GeoCore isolated QA Stripe acceptance
 # Sandbox-only, using secrets supplied by the owner. Never deploy production or shared staging.
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "full = base lifecycle + extended; hosted = only hosted Checkout and portal (smallest rerun)"
+        type: choice
+        options: [full, hosted]
+        default: full
 permissions:
   contents: read
 concurrency:
@@ -139,6 +145,7 @@ jobs:
             echo "STAGING_OWNER_B_PASSWORD=$PW_B"
           } >> "$GITHUB_ENV"
       - name: Run real sandbox subscription and webhook lifecycle
+        if: ${{ inputs.scope != 'hosted' }}
         env:
           QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
           QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
@@ -148,9 +155,10 @@ jobs:
         env:
           QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
           QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
+          EXT_SCOPE: ${{ inputs.scope || 'full' }}
         run: python3 scripts/qa/qa_stripe_acceptance_ext.py
       - name: Confirm permanent and transient billing-failure markers reached the API logs (logging only; NOT alert delivery)
-        if: ${{ !cancelled() && env.BILLING_SETUP_STARTED == '1' }}
+        if: ${{ !cancelled() && env.BILLING_SETUP_STARTED == '1' && inputs.scope != 'hosted' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash

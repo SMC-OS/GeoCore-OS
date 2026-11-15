@@ -239,6 +239,16 @@ def run():
                 rec(label, "BLOCKED", "stripe", "no genuine live sandbox subscription could be established")
             return
         rec("subscription under test", "NOTE", "stripe", source)
+        if os.environ.get("EXT_SCOPE") == "hosted":
+            # Smallest hosted rerun: Checkout (decline, success) above, hosted portal here; resilience scenarios are not repeated.
+            code, portal = B.call("POST", "/billing/portal")
+            purl = portal.get("portal_url", "") if code == 200 else ""
+            if urllib.parse.urlsplit(purl).hostname != "billing.stripe.com":
+                rec("billing portal for the subscriber", "BLOCKED", "stripe", f"POST /billing/portal HTTP {code}")
+            else:
+                r = browser("portal", purl, B.email)
+                ok("hosted billing portal opens for primary workspace", r["outcome"] == "portal_loaded", "stripe", r.get("detail", ""))
+            return
 
         # ---- Failed renewal and recovery (real Stripe objects and real webhook deliveries) -------------------------
         bad = stripe_req("POST", "/payment_methods/pm_card_chargeCustomerFail/attach", {"customer": cust_id})[1].get("id")
