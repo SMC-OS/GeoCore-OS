@@ -4,6 +4,20 @@ Status: **PREPARED, NOTHING PROVISIONED, NOTHING OPENED.** Production, shared st
 
 Revision separation (unchanged): product runtime candidate `f503041822923bd4b07a0bebaa6748ba71873740`; merged QA tooling `2b2f514` (PR #76) and `631477bbbc55236271d6bbd5d88930055787c4b7` (PR #77); acceptance tooling `qa/stripe-ext` (not merged).
 
+## 0. Owner approval record
+
+| Item | Recorded decision | Source | Scope and limits |
+|---|---|---|---|
+| Cost caps (acceptance pack item 3) | **Approved: both caps** — disposable first-customer environment up to **$10**, replacement-infrastructure recovery exercise up to **$3** | Owner chat message "approve both caps", 15 Nov 2026, this session | Approves spending up to those caps only, for the specifications in sections 2 and 4, with the recovery exercise first. It is not approval to open admission anywhere other than the disposable environment, not approval of the mailbox, not approval of any other pack item, and not authorisation to touch production, shared staging or live Stripe. Teardown must be verified and the final dashboard cost recorded. If projected spend would exceed a cap, work stops and the owner is asked. |
+
+Still required from the owner before any resource can be created (the agent holds only the isolated-QA project token and cannot create Railway projects or tokens):
+1. Create the disposable Railway project with an unguessable name, and a separate environment for each exercise (recovery first, first-customer second).
+2. Create one project token per environment and add the repository secrets `GEOCORE_DISPOSABLE_RECOVERY_RAILWAY_TOKEN` and `GEOCORE_DISPOSABLE_FIRSTCUSTOMER_RAILWAY_TOKEN` (Railway dashboard → project → Settings → Tokens → create token for the environment; GitHub → repository → Settings → Secrets and variables → Actions).
+3. Set a Railway usage alert at $5 and a hard limit if the plan offers one.
+4. Confirm the test mailbox (pack item 1) and that the Resend account's unverified sender delivers only to its owner (section 2.2 item 3).
+5. Confirm the Stripe sandbox keys and a dedicated sandbox webhook endpoint are the test ones (names only; the agent never needs to see them).
+When these exist the agent proceeds in this order: recovery exercise (section 4) → teardown → first-customer environment (section 2) → owner session → teardown.
+
 ## 1. PR #77 review record (recovery tooling) and merge
 
 Reviewed at the exact head `154fce1a05466268990057717bb651130a094433`; merged as `631477bbbc55236271d6bbd5d88930055787c4b7` after the review, following the owner's instruction "merge pr77 when green".

@@ -982,7 +982,7 @@
       "evidence": [],
       "status": "BLOCKED",
       "owner": "Owner (approval for paid resources)",
-      "remaining": "NOT EXECUTED. Exercise specified in doc 22 section 4 (new PostgreSQL 18 + empty volume, restore from bundle and integrity record only, two-tenant retrieval, timing, teardown); estimated about $0.30-$1.40, cap $3 proposed; needs owner approval. Do not share data stores with the first-customer environment (doc 22 section 4.1).",
+      "remaining": "NOT EXECUTED. Exercise specified in doc 22 section 4 (new PostgreSQL 18 + empty volume, restore from bundle and integrity record only, two-tenant retrieval, timing, teardown); estimated about $0.30-$1.40, cap $3 proposed; needs owner approval. Do not share data stores with the first-customer environment (doc 22 section 4.1). OWNER APPROVAL RECORDED 15 Nov (chat: 'approve both caps'): first-customer cap $10, recovery cap $3. Still needed before provisioning: owner-created disposable Railway project and per-environment tokens, usage alert, confirmed test mailbox and sandbox Stripe/Resend setup (doc 22 section 0).",
       "blocks_initial_release": true
     },
     {
@@ -995,7 +995,7 @@
       "evidence": [],
       "status": "BLOCKED",
       "owner": "Owner (approval) and agent",
-      "remaining": "NOT EXECUTED. Specification, isolation safeguards, resource estimate (about $1/day, cap $10 proposed) and teardown in doc 22 section 2. The product's admission control is a binary open/closed switch with no identity allowlist, so restriction is by environment isolation (unguessable names, no DNS, time-boxed admission, Resend sender that only reaches the account owner). Needs owner approval of cost and the disposable Railway project/tokens; admission must not be opened in the existing acceptance environment.",
+      "remaining": "NOT EXECUTED. Specification, isolation safeguards, resource estimate (about $1/day, cap $10 proposed) and teardown in doc 22 section 2. The product's admission control is a binary open/closed switch with no identity allowlist, so restriction is by environment isolation (unguessable names, no DNS, time-boxed admission, Resend sender that only reaches the account owner). Needs owner approval of cost and the disposable Railway project/tokens; admission must not be opened in the existing acceptance environment. OWNER APPROVAL RECORDED 15 Nov (chat: 'approve both caps'): first-customer cap $10, recovery cap $3. Still needed before provisioning: owner-created disposable Railway project and per-environment tokens, usage alert, confirmed test mailbox and sandbox Stripe/Resend setup (doc 22 section 0).",
       "blocks_initial_release": true
     }
   ]
