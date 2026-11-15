@@ -35,26 +35,52 @@ try {
     if (!/^(4242424242424242|4000000000000002)$/.test(card)) {
       out("blocked", "card is not an allowed Stripe test card");
     } else {
-      const number = page.getByLabel(/card number/i).first();
-      await number.waitFor({ state: "visible" });
-      await number.fill(card);
-      await page.getByLabel(/expiration|expiry/i).first().fill("12 / 34");
-      await page.getByLabel(/security code|cvc/i).first().fill("123");
-      const name = page.getByLabel(/name on card|cardholder name/i).first();
-      if (await name.count()) await name.fill("QA Acceptance");
-      const postcode = page.getByLabel(/postal code|zip|postcode/i).first();
-      if (await postcode.count()) await postcode.fill("SW1A 1AA");
-      const email = page.getByLabel(/^email/i).first();
-      if ((await email.count()) && (await email.inputValue().catch(() => "")) === "" && process.env.EXPECT_EMAIL) {
-        await email.fill(process.env.EXPECT_EMAIL);
+      // Stripe-hosted Checkout may render inputs directly or inside frames; search every frame by autocomplete attribute.
+      const find = async (selector, timeout = 30000) => {
+        const end = Date.now() + timeout;
+        while (Date.now() < end) {
+          for (const f of page.frames()) {
+            const loc = f.locator(selector).first();
+            if ((await loc.count()) > 0 && (await loc.isVisible().catch(() => false))) return loc;
+          }
+          await page.waitForTimeout(500);
+        }
+        return null;
+      };
+      const diag = async (why) => {
+        const frames = page.frames().length;
+        const captcha = (await page.locator('iframe[src*="hcaptcha"], iframe[title*="captcha" i], iframe[src*="recaptcha"]').count()) > 0;
+        const labels = await page.evaluate(() => Array.from(document.querySelectorAll("label, button, [role=radio], [role=tab]")).map((e) => (e.innerText || e.getAttribute("aria-label") || "").trim().slice(0, 40)).filter(Boolean).slice(0, 30));
+        const autos = await page.evaluate(() => Array.from(document.querySelectorAll("input")).map((e) => e.getAttribute("autocomplete") || e.name || e.type).slice(0, 20));
+        await page.screenshot({ path: "qa-stripe-checkout-diag.png", fullPage: true }).catch(() => {});
+        out("blocked", `${why}; frames=${frames} captcha=${captcha} labels=${JSON.stringify(labels)} inputs=${JSON.stringify(autos)}`);
+      };
+      // The newer layout may default to another payment method: choose Card when a selector exists.
+      const cardChoice = page.getByRole("radio", { name: /card/i }).first();
+      if ((await cardChoice.count()) > 0) await cardChoice.click().catch(() => {});
+      const number = await find('input[autocomplete="cc-number"], input[name="cardNumber"], #cardNumber');
+      if (!number) {
+        await diag("card number field not found");
+      } else {
+        await number.fill(card);
+        const exp = await find('input[autocomplete="cc-exp"], input[name="cardExpiry"], #cardExpiry', 10000);
+        const cvc = await find('input[autocomplete="cc-csc"], input[name="cardCvc"], #cardCvc', 10000);
+        if (exp) await exp.fill("12 / 34");
+        if (cvc) await cvc.fill("123");
+        const name = await find('input[autocomplete="cc-name"], input[name="billingName"], #billingName', 3000);
+        if (name) await name.fill("QA Acceptance");
+        const postcode = await find('input[autocomplete="postal-code"], input[name="billingPostalCode"], #billingPostalCode', 3000);
+        if (postcode) await postcode.fill("SW1A 1AA");
+        const email = await find('input[autocomplete="email"], input[name="email"], #email', 3000);
+        if (email && (await email.inputValue().catch(() => "")) === "" && process.env.EXPECT_EMAIL) await email.fill(process.env.EXPECT_EMAIL);
+        await page.locator('button[type="submit"]').first().click();
+        const result = await Promise.race([
+          page.waitForURL((u) => u.hostname !== "checkout.stripe.com", { timeout: 90000 }).then(() => "complete"),
+          page.getByText(/card was declined|payment failed|declined/i).first().waitFor({ state: "visible", timeout: 90000 }).then(() => "declined"),
+        ]).catch(() => "blocked");
+        if (result === "blocked") await diag("no redirect or decline message within 90s");
+        else out(result, "");
       }
-      await page.locator('button[type="submit"]').first().click();
-      // Success redirects away from checkout.stripe.com; a decline keeps the page and shows an error.
-      const result = await Promise.race([
-        page.waitForURL((u) => u.hostname !== "checkout.stripe.com", { timeout: 90000 }).then(() => "complete"),
-        page.getByText(/card was declined|payment failed|declined/i).first().waitFor({ state: "visible", timeout: 90000 }).then(() => "declined"),
-      ]).catch(() => "blocked");
-      out(result, result === "blocked" ? "no redirect or decline message within 90s" : "");
     }
   }
 } catch (e) {

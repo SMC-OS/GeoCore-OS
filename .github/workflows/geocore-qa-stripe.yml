@@ -224,6 +224,7 @@ jobs:
           path: |
             qa-stripe-results.json
             qa-stripe-ext-results.json
+            apps/web/qa-stripe-checkout-diag.png
             qa-stripe-identity.txt
           retention-days: 14
           if-no-files-found: warn
