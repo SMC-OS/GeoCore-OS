@@ -2,9 +2,6 @@ name: GeoCore isolated QA Stripe acceptance
 # Sandbox-only, using secrets supplied by the owner. Never deploy production or shared staging.
 on:
   workflow_dispatch:
-  push:
-    branches: [qa/geocore-closure-20261105]
-    paths: ['.github/workflows/geocore-qa-stripe.yml']
 permissions:
   contents: read
 concurrency:
@@ -17,7 +14,8 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
-      EXPECTED_SHA: 2dda56b18f630d3014650bef959e34132ba8fc96
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+      EXPECTED_MIGRATION: c7d8e9f0a1b2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,6 +88,7 @@ jobs:
           echo "::add-mask::$PW_B"
           base64 -w0 scripts/qa/provision_synthetic_owner.py | set_qa_var QA_PROVISION_PY_B64
           provision_script_sh | base64 -w0 | set_qa_var QA_PROVISION_SH_B64
+          printf '%s' "$EXPECTED_MIGRATION" | set_qa_var QA_EXPECT_MIGRATION
           printf '%s' "stripe-qa-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_A_EMAIL
           printf '%s' "Stripe QA A $RUN" | set_qa_var QA_OWNER_A_COMPANY
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
@@ -120,6 +119,9 @@ jobs:
           [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS ]]
           commit_matches_candidate "$SHA" "$EXPECTED_SHA"
           echo "QA billing deployment $ID $SHA" >> qa-stripe-identity.txt
+          MIG="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 2000 2>&1 | grep -a '^QA_MIGRATION|' | tail -1 | tr -d '\r')"
+          echo "$MIG" | tee -a qa-stripe-identity.txt
+          [[ "$MIG" == "QA_MIGRATION|$EXPECTED_MIGRATION|PASS" ]] || { echo "MIGRATION HEAD ASSERTION FAILED (expected $EXPECTED_MIGRATION)"; exit 1; }
           {
             echo "STAGING_OWNER_EMAIL=stripe-qa-$RUN@acceptance.invalid"
             echo "STAGING_OWNER_PASSWORD=$PW_A"

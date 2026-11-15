@@ -1,0 +1,171 @@
+name: GeoCore isolated QA deploy candidate (pinned SHA)
+
+# Deploys ONE immutable product candidate to the ISOLATED QA environment only (project geocore-qa-20261110, environment
+# acceptance): API first, verified, then web, verified. MANUAL DISPATCH ONLY; no push trigger, so editing tooling can
+# never deploy or start an acceptance run. Never targets shared staging or production: all IDs and hosts are fixed
+# below and re-verified from the Railway API before any mutation. No service configuration is changed here (no start
+# command, no variables): the only mutation is serviceInstanceDeployV2 pinned to commitSha.
+#
+# The candidate SHA is the PRODUCT commit. QA-only tooling commits (workflows, scripts/qa, docs, artifacts) may sit on
+# top of it on the closure branch; the guard below proves they change no runtime path.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
+jobs:
+  deploy-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
+      QA_WEB_SVC: 8aa9dce6-49c9-4da2-b4a7-288de10e0904
+      QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+      EXPECTED_MIGRATION: c7d8e9f0a1b2
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Stop unless the owner has provided the QA project token
+        shell: bash
+        run: |
+          [[ -n "${RAILWAY_TOKEN:-}" ]] || { echo "BLOCKED: GEOCORE_QA_RAILWAY_TOKEN is not set (owner action). Nothing was run."; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - run: npm install --global @railway/cli@4
+
+      - name: Candidate source and CI integrity (no mutation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          git cat-file -e "$EXPECTED_SHA^{commit}"
+          git fetch origin qa/geocore-closure-20261105 --quiet
+          git merge-base --is-ancestor "$EXPECTED_SHA" origin/qa/geocore-closure-20261105
+          echo "candidate $EXPECTED_SHA is on qa/geocore-closure-20261105"
+          # QA-only tooling commits after the product candidate must not touch any runtime path.
+          if git diff --quiet "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}"; then
+            echo "runtime paths identical between candidate and workflow commit $(git rev-parse HEAD)"
+          else
+            echo "REFUSED: runtime paths differ between the candidate and this commit:"; git diff --stat "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}"; exit 1
+          fi
+          # All five CI jobs must have succeeded on the exact candidate commit.
+          gh api "repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA/check-runs?per_page=100" \
+            | jq -r '.check_runs[] | "\(.name)\t\(.conclusion)"' | sort -u | tee ci-checks.txt
+          for job in backend frontend e2e dependency-audit secret-scan; do
+            grep -Fxq "$job"$'\t'success ci-checks.txt || { echo "REFUSED: CI job $job has no success on $EXPECTED_SHA"; exit 1; }
+            ! grep -Fxq "$job"$'\t'failure ci-checks.txt || { echo "REFUSED: CI job $job also failed on $EXPECTED_SHA"; exit 1; }
+          done
+          echo "PASS CI: backend frontend e2e dependency-audit secret-scan all success on $EXPECTED_SHA"
+
+      - name: Verify isolated project, environment and services; record pre-deployment state
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          fail() { echo "REFUSED: $1" | tee -a qa-deploy-evidence.txt >&2; exit 1; }
+          [[ "$QA_ENV" == "$QA_ENVIRONMENT_ID" && "$QA_API_SVC" == 40d0cad3-0c01-467a-910e-6c9f818fd2bf ]] || fail "wrong environment or API service id"
+          railway status --json | jq -r '"project: \(.name)", (.environments.edges[]?.node | "environment: \(.name) (\(.id))")' | tee qa-deploy-evidence.txt
+          grep -Fxq "project: geocore-qa-20261110" qa-deploy-evidence.txt || fail "wrong Railway project"
+          grep -Fxq "environment: acceptance ($QA_ENV)" qa-deploy-evidence.txt || fail "wrong Railway environment"
+          for svc in geocore-api-qa geocore-web-qa; do
+            echo "PRE $svc: $(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash // "n/a")"')" | tee -a qa-deploy-evidence.txt
+          done
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || fail "API start command differs from reviewed baseline"
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || fail "API predeploy command differs from reviewed baseline"
+          echo "PRE start/predeploy commands equal the reviewed baseline" | tee -a qa-deploy-evidence.txt
+          # Names only; values are never printed.
+          for svc in geocore-api-qa geocore-web-qa; do
+            echo "PRE $svc variable names: $(railway variable list --service "$svc" --environment "$QA_ENV" --json | jq -r 'keys | join(",")')" | tee -a qa-deploy-evidence.txt
+          done
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("QA_") or startswith("STRIPE_") or startswith("RESEND_"))) | length == 0' >/dev/null || fail "temporary QA/STRIPE/RESEND variables already present"
+          [[ "$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -er '.signups_open | tostring')" == false ]] || fail "public admission is not closed"
+          echo "PRE admission closed" | tee -a qa-deploy-evidence.txt
+
+      - name: Deploy API pinned to the candidate and verify before touching web
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          read -r PREV _ _ < <(latest_deployment)
+          out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")"
+          TARGET="$(jq -er 'if (.errors // [])|length > 0 then error("Railway rejected the deployment request") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")"
+          echo "API deployment requested: $TARGET (previous $PREV)" | tee -a qa-deploy-evidence.txt
+          wait_for_new_deployment "$PREV" 1200 | tee -a qa-deploy-evidence.txt
+          wait_for_stable_success 1200 | tee -a qa-deploy-evidence.txt
+          read -r ID STATUS SHA < <(latest_deployment)
+          [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]] || { echo "API deployment mismatch: $ID $STATUS $SHA"; exit 1; }
+          echo "API_DEPLOYMENT_ID=$ID" | tee -a qa-deploy-evidence.txt
+          wait_for_ready "$QA_API" 300 | tee -a qa-deploy-evidence.txt
+          curl -fsS --max-time 30 "$QA_API/health" | tee -a qa-deploy-evidence.txt; echo | tee -a qa-deploy-evidence.txt
+          curl -fsS --max-time 30 "$QA_API/ready" | tee -a qa-deploy-evidence.txt; echo | tee -a qa-deploy-evidence.txt
+          # The start command's migrate gate prints `alembic current` into the deployment log.
+          LOGS="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 2000 2>&1 | tr -d '\r')"
+          grep -Eqa "^$EXPECTED_MIGRATION \(head\)" <<<"$LOGS" || { echo "MIGRATION HEAD NOT SEEN IN DEPLOY LOG (expected $EXPECTED_MIGRATION)"; exit 1; }
+          echo "PASS migrate gate reported $EXPECTED_MIGRATION (head)" | tee -a qa-deploy-evidence.txt
+          grep -Eia "Running upgrade" <<<"$LOGS" | cut -c1-200 | head -5 | tee -a qa-deploy-evidence.txt || true
+          grep -Eiac "Traceback|CRITICAL|runtime_check.*(fail|refus)" <<<"$LOGS" | tee -a qa-deploy-evidence.txt || true
+          [[ "$(grep -Eiac 'Traceback' <<<"$LOGS" || true)" == 0 ]] || { echo "Traceback in API startup logs"; exit 1; }
+          [[ "$(start_get)" == "$QA_ORIG_START" && "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || { echo "service configuration changed"; exit 1; }
+          [[ "$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -er '.signups_open | tostring')" == false ]]
+          echo "PASS API verification" | tee -a qa-deploy-evidence.txt
+
+      - name: Deploy web pinned to the candidate and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          wlatest() { railway deployment list --service geocore-web-qa --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash // "n/a")"'; }
+          read -r PREV _ _ < <(wlatest)
+          out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_WEB_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")"
+          TARGET="$(jq -er 'if (.errors // [])|length > 0 then error("Railway rejected the deployment request") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")"
+          echo "WEB deployment requested: $TARGET (previous $PREV)" | tee -a qa-deploy-evidence.txt
+          deadline=$(( $(date +%s) + 1500 )); ok=0
+          while (( $(date +%s) < deadline )); do
+            read -r ID STATUS SHA < <(wlatest)
+            if [[ "$ID" != "$PREV" ]]; then
+              case "$STATUS" in SUCCESS) ok=1; break ;; FAILED|CRASHED) echo "web deployment $ID $STATUS"; exit 1 ;; esac
+            fi
+            sleep 15
+          done
+          (( ok )) || { echo "timed out waiting for web deployment"; exit 1; }
+          sleep 30; read -r ID STATUS SHA < <(wlatest)
+          [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]] || { echo "web deployment mismatch: $ID $STATUS $SHA"; exit 1; }
+          echo "WEB_DEPLOYMENT_ID=$ID" | tee -a qa-deploy-evidence.txt
+          curl -fsS --max-time 30 --retry 5 --retry-delay 10 -o /dev/null -w "web /login %{http_code}\n" "$QA_WEB/login" | tee -a qa-deploy-evidence.txt
+          # Anonymous requests must be rejected by the API, directly and through the web origin's /api rewrite.
+          # (Browser-level protected-route behaviour is exercised by the authenticated acceptance suite.)
+          code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$QA_API/api/v1/customers")"; echo "anonymous API /customers -> $code" | tee -a qa-deploy-evidence.txt
+          [[ "$code" == 401 || "$code" == 403 ]]
+          code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$QA_WEB/api/v1/customers")"; echo "anonymous via web origin /api/v1/customers -> $code" | tee -a qa-deploy-evidence.txt
+          [[ "$code" == 401 || "$code" == 403 ]]
+          # Same-origin API routing: the web host must proxy /api to the QA API (health through the web origin).
+          curl -fsS --max-time 30 "$QA_WEB/api/v1/auth/admission" | jq -e '.signups_open == false' >/dev/null
+          echo "PASS web verification and same-origin API routing; admission closed" | tee -a qa-deploy-evidence.txt
+          for svc in geocore-api-qa geocore-web-qa; do
+            echo "FINAL $svc: $(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash)"')" | tee -a qa-deploy-evidence.txt
+          done
+
+      - name: Retain redacted deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-qa-deploy-candidate-evidence
+          path: |
+            qa-deploy-evidence.txt
+            ci-checks.txt
+          retention-days: 14
+          if-no-files-found: warn

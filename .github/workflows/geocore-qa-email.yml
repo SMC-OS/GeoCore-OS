@@ -4,9 +4,6 @@ name: GeoCore isolated QA real inbox acceptance
 # Admission remains closed. No shared-staging or production changes.
 on:
   workflow_dispatch:
-  push:
-    branches: [qa/geocore-closure-20261105]
-    paths: ['.github/workflows/geocore-qa-email.yml']
 permissions:
   contents: read
 concurrency:
@@ -19,7 +16,7 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
-      EXPECTED_SHA: 86c4911f3d22acf1a2f5826f79ac0dbfa8e3aa3b
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
     steps:
       - uses: actions/checkout@v4
         with:

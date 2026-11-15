@@ -2,7 +2,8 @@ name: GeoCore isolated QA authenticated acceptance
 
 # Runs the eight STONE-GATE / DEF-003 browser acceptance tests against the ISOLATED, synthetic-data
 # Railway QA environment (project geocore-qa-20261110, environment acceptance) from a GitHub-hosted
-# runner. Manual dispatch or a push that changes this file. Never targets shared staging or production:
+# runner. MANUAL DISPATCH ONLY: a push that edits this file must never start an acceptance run, because the
+# run is only meaningful once geocore-qa-deploy-candidate.yml has put BOTH matching candidate deployments in place. Never targets shared staging or production:
 # the hosts and IDs are fixed below and the Playwright config independently refuses anything else.
 #
 # Secret: GEOCORE_QA_RAILWAY_TOKEN, a Railway PROJECT token for geocore-qa-20261110 / acceptance.
@@ -21,12 +22,6 @@ on:
         description: "Stop at the first failure with a 90 s per-test timeout (fast iteration). Default runs all eight with full timeouts."
         type: boolean
         default: false
-  push:
-    branches:
-      - ccr-12966459-skf9q0
-      - qa/geocore-closure-20261105
-    paths:
-      - '.github/workflows/geocore-qa-acceptance.yml'
 
 permissions:
   contents: read
@@ -42,7 +37,7 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
-      EXPECTED_SHA: 2dda56b18f630d3014650bef959e34132ba8fc96
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
       EXPECTED_MIGRATION: c7d8e9f0a1b2
       QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
