@@ -149,7 +149,7 @@ jobs:
           QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
           QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
         run: python3 scripts/qa/qa_stripe_acceptance_ext.py
-      - name: Confirm permanent and transient billing-failure markers reached the API logs
+      - name: Confirm permanent and transient billing-failure markers reached the API logs (logging only; NOT alert delivery)
         if: ${{ !cancelled() && env.BILLING_SETUP_STARTED == '1' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
@@ -157,18 +157,12 @@ jobs:
         run: |
           set -uo pipefail
           source scripts/qa/qa_railway_ops.sh
-          [[ -f qa-stripe-ext-events.json ]] || { echo "BLOCKED: no extended events file"; exit 1; }
           read -r ID _ _ < <(latest_deployment)
-          LOGS="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 5000 2>&1 | tr -d '\r')"
-          rc=0
-          for pair in permanent:billing_webhook_permanent_failure transient:billing_webhook_transient_failure; do
-            kind="${pair%%:*}"; marker="${pair#*:}"
-            for eid in $(jq -r --arg k "$kind" '.[] | select(.kind==$k) | .event_id' qa-stripe-ext-events.json); do
-              if grep -aq "$marker event_id=$eid" <<<"$LOGS"; then echo "PASS $kind failure logged ($marker) for synthetic event $eid" | tee -a qa-stripe-identity.txt
-              else echo "FAIL $kind marker $marker not found for $eid" | tee -a qa-stripe-identity.txt; rc=1; fi
-            done
-          done
-          ! grep -aEq "sk_(test|live)_|rk_(test|live)_|whsec_" <<<"$LOGS" || { echo "FAIL: Stripe credential pattern in API logs"; rc=1; }
+          railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 5000 2>&1 | tr -d '\r' > qa-api-log.txt
+          # Exit 0 = every required class had an expected event with its log marker; 1 = FAIL; 2 = BLOCKED (no event generated).
+          python3 scripts/qa/verify_billing_log_markers.py qa-stripe-ext-events.json qa-api-log.txt --require permanent,transient | tee -a qa-stripe-identity.txt
+          rc="${PIPESTATUS[0]}"
+          rm -f qa-api-log.txt
           exit "$rc"
       - name: Restore QA configuration (even on failure)
         if: always()
@@ -210,6 +204,15 @@ jobs:
           # Original unconfigured billing endpoint must return unavailable.
           code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$QA_API/api/v1/billing/webhook" -H 'Content-Type: application/json' -d '{}')" || rc=1
           [[ "$code" == 503 ]] || { echo "RESTORE FAILED: unconfigured webhook expected 503; got $code"; rc=1; }
+          read -r FID FSTATUS FSHA < <(latest_deployment)
+          echo "RESTORED API deployment $FID $FSTATUS $FSHA" >> qa-stripe-identity.txt
+          [[ "$FSTATUS" == SUCCESS && "$FSHA" == "$EXPECTED_SHA" ]] || rc=1
+          curl -fsS --max-time 30 "$QA_API/health" >/dev/null || rc=1
+          WEBCODE="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' https://geocore-web-qa-acceptance.up.railway.app/login)"; echo "restored web /login $WEBCODE" >> qa-stripe-identity.txt
+          [[ "$WEBCODE" == 200 ]] || rc=1
+          [[ "$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -er '.signups_open | tostring')" == false ]] && echo "restored admission closed" >> qa-stripe-identity.txt || rc=1
+          echo "restored start/predeploy equal reviewed baseline: $([[ "$(start_get)" == "$QA_ORIG_START" && "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo yes || echo NO)" >> qa-stripe-identity.txt
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null && echo "restored: no STRIPE_/QA_ variables remain" >> qa-stripe-identity.txt || rc=1
           echo "QA configuration restoration exit=$rc" >> qa-stripe-identity.txt
           exit "$rc"
       - name: Retain redacted billing evidence

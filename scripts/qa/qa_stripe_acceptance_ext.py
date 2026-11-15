@@ -119,6 +119,21 @@ def browser(mode, url, email, card=""):
     return {"outcome": "blocked", "detail": "no browser result"}
 
 
+def make_api_sub(owner, tenant, customer=None, days=10):
+    """A genuine sandbox customer + trialing subscription created through the Stripe API (Stripe delivers its webhooks to QA).
+    Independent of hosted Checkout: used wherever a scenario only needs a real live subscription."""
+    if customer is None:
+        customer = stripe_req("POST", "/customers", {"email": owner.email, "description": "GeoCore isolated QA ext " + os.environ.get("GITHUB_RUN_ID", ""),
+                                                      "metadata[geocore_qa]": "true", "metadata[tenant_id]": tenant})[1].get("id")
+    if not customer:
+        return None, None
+    pm = stripe_req("POST", "/payment_methods/pm_card_visa/attach", {"customer": customer})[1].get("id")
+    sub = stripe_req("POST", "/subscriptions", {"customer": customer, "items[0][price]": q.PRICES["STARTER_MONTHLY"][0], "default_payment_method": pm,
+                                                "trial_end": str(int(time.time()) + days * 86400), "metadata[tenant_id]": tenant,
+                                                "metadata[plan]": "starter", "metadata[billing_period]": "monthly"})[1].get("id")
+    return customer, sub
+
+
 def checkout_for(owner):
     code, obj = owner.call("POST", "/billing/checkout", {"plan": "starter", "billing_period": "monthly"})
     url = obj.get("checkout_url", "") if code == 200 else ""
@@ -142,7 +157,23 @@ def run():
     ok("two distinct synthetic workspaces", TA != TB, "stripe")
     created_customers, created_subs, open_sessions = [], [], []
     try:
-        # ---- Hosted Checkout: declined card, then successful first Checkout (primary owner) -----------------------------
+        # ---- Prepare the primary workspace as an existing-contract workspace with a VALID Stripe customer --------------------
+        # (the base script deletes its customer at the end, and a deleted customer makes Checkout fail with HTTP 400; that was
+        # the cause of the second extended failure: a harness-ordering defect, not candidate behaviour).
+        cust_p, sub_p0 = make_api_sub(B, TB)
+        prepared = False
+        if cust_p and sub_p0:
+            created_customers.append(cust_p)
+            created_subs.append(sub_p0)
+            linked0 = B.poll(lambda x: x.get("plan") == "starter" and x.get("status") in ("trialing", "active") and x.get("trial_state") is None, 240)
+            ok("primary workspace linked to a fresh genuine sandbox subscription by actual Stripe webhook", linked0 is not None, "stripe")
+            stripe_req("DELETE", "/subscriptions/" + sub_p0)
+            created_subs.remove(sub_p0)
+            cancelled0 = B.poll(lambda x: x.get("status") in ("cancelled", "canceled"), 240)
+            prepared = ok("actual Stripe cancellation webhook restricts the primary workspace (existing contract, valid customer kept)", cancelled0 is not None and B.workspace_code() == 402, "stripe")
+        else:
+            rec("primary workspace preparation for hosted Checkout", "BLOCKED", "stripe", "could not create a sandbox customer and subscription")
+        # ---- Hosted Checkout: declined card, then successful Checkout (primary owner) ---------------------------------------
         before = B.sub()
         ok("primary workspace is cancelled after the base run and restricted (402)", before.get("status") in ("cancelled", "canceled") and B.workspace_code() == 402, "stripe")
         ok("secondary workspace is a no-card trial with workspace access", A.sub().get("status") == "trialing" and A.workspace_code() == 200, "stripe")
@@ -150,7 +181,7 @@ def run():
         ok("closed admission refuses Checkout for a workspace with no Stripe subscription (policy; admission not opened)", nc == 403, "stripe", f"HTTP {nc}")
         code, url, sid = checkout_for(B)
         if code != 200 or not sid:
-            rec("hosted Checkout session created (decline path)", "BLOCKED", "stripe", f"POST /billing/checkout HTTP {code}")
+            rec("hosted Checkout session created (decline path)", "BLOCKED", "stripe", f"POST /billing/checkout HTTP {code}; workspace prepared={prepared}")
         else:
             open_sessions.append(sid)
             r = browser("pay", url, B.email, "4000000000000002")
@@ -181,7 +212,6 @@ def run():
                 stripe_sub_id = s.get("subscription")
                 if stripe_sub_id:
                     created_subs.append(stripe_sub_id)
-                    created_customers.append(s.get("customer"))
                     ss = stripe_req("GET", "/subscriptions/" + stripe_sub_id)[1]
                     ok("Stripe subscription is tenant-bound to primary workspace only", ss.get("metadata", {}).get("tenant_id") == TB and ss.get("livemode") is False, "stripe")
                     # Stripe delivered the events to the QA endpoint (pending_webhooks == 0 means no outstanding delivery).
@@ -191,14 +221,22 @@ def run():
             else:
                 rec("hosted first Checkout completed", "BLOCKED", "stripe", f"browser outcome={r['outcome']} {r.get('detail','')}")
 
-        # Everything below needs a Stripe-linked subscription for B.
-        cur = B.sub()
-        sub_id = created_subs[0] if created_subs else None
-        cust_id = created_customers[0] if created_customers else None
-        if not (completed and sub_id and cust_id):
+        # Everything below needs ONE genuine live sandbox subscription for the primary workspace. Hosted Checkout is only one way to
+        # obtain it; when it did not complete, an API-created genuine subscription is used and the evidence note says so.
+        if completed and created_subs and created_subs[-1]:
+            sub_id, cust_id, source = created_subs[-1], cust_p, "hosted Checkout subscription"
+        else:
+            cust_id, sub_id = (make_api_sub(B, TB, customer=cust_p) if cust_p else (None, None))
+            source = "API-created genuine sandbox subscription (hosted Checkout not completed)"
+            if sub_id:
+                created_subs.append(sub_id)
+                ok("primary workspace linked to the independent genuine subscription by actual Stripe webhook",
+                   B.poll(lambda x: x.get("plan") == "starter" and x.get("status") in ("trialing", "active") and x.get("trial_state") is None, 240) is not None, "stripe")
+        if not (sub_id and cust_id):
             for label in ("failed renewal and recovery", "billing portal", "cancellation and resume", "duplicate/out-of-order/concurrent/cross-tenant/saturation events"):
-                rec(label, "BLOCKED", "stripe", "no Stripe subscription from hosted Checkout; dependent scenarios not executed")
+                rec(label, "BLOCKED", "stripe", "no genuine live sandbox subscription could be established")
             return
+        rec("subscription under test", "NOTE", "stripe", source)
 
         # ---- Failed renewal and recovery (real Stripe objects and real webhook deliveries) -------------------------
         bad = stripe_req("POST", "/payment_methods/pm_card_chargeCustomerFail/attach", {"customer": cust_id})[1].get("id")
