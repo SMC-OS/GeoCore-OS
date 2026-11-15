@@ -44,12 +44,29 @@ jobs:
           sudo /opt/rehearsal-venv/bin/pip install -q -r requirements.txt
           sudo chmod -R a+rX /opt/rehearsal-venv
           sudo -u nobody /opt/rehearsal-venv/bin/python -c "import fastapi, psycopg, alembic; print('interpreter usable by an unprivileged user')"
+      - name: Stage the exact candidate source under /opt and prove UID 10001 can traverse, import and use it
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No credentials of any kind may be present: this job has no Railway, Stripe, production or staging access.
+          if env | grep -E '^(RAILWAY|STRIPE|GEOCORE_QA|DATABASE_URL)' >/dev/null; then echo "REFUSED: credential-like variable present"; exit 1; fi
+          # The application drops to UID 10001 (as on Railway); /home/runner is not traversable by that user, so stage a copy.
+          sudo rm -rf /opt/rehearsal-repo
+          sudo cp -a "$PWD" /opt/rehearsal-repo
+          sudo chmod -R a+rX /opt/rehearsal-repo
+          # 1. The staged runtime source is byte-identical to the immutable candidate.
+          (cd /opt/rehearsal-repo && source scripts/qa/qa_railway_ops.sh && git diff --quiet "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}" \
+            && echo "staged runtime paths identical to $EXPECTED_SHA (HEAD $(git rev-parse HEAD))")
+          # 2. UID 10001 can traverse the source tree and import the recovery tools and the application package.
+          APP="sudo setpriv --reuid=10001 --regid=10001 --clear-groups"
+          $APP test -r /opt/rehearsal-repo/scripts/recovery/writer_barrier.py && echo "UID 10001 can read writer_barrier.py"
+          $APP env -i PATH="$PATH" /opt/rehearsal-venv/bin/python -c "import sys; sys.path.insert(0,'/opt/rehearsal-repo/scripts/recovery'); sys.path.insert(0,'/opt/rehearsal-repo'); import os; assert os.geteuid()==10001; import writer_barrier, content_fingerprint, app; print('UID', os.geteuid(), 'imports writer_barrier, content_fingerprint and the app package')"
+          # 3. The application process itself is launched as UID 10001 by test_00 (positive control); never as root.
       - name: "Run all rehearsal tests as root (fail-closed - exactly 28 passed, 0 failed, 0 errors, 0 skipped)"
         shell: bash
         run: |
           set -uo pipefail
-          # The application drops to UID 10001 (as on Railway); /home/runner is not traversable by that user, so run from a copy.
-          sudo rm -rf /opt/rehearsal-repo && sudo cp -a "$PWD" /opt/rehearsal-repo && sudo chmod -R a+rX /opt/rehearsal-repo
+          test -d /opt/rehearsal-repo   # staged and verified by the previous step
           (cd /opt/rehearsal-repo && sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE=/opt/rehearsal-repo/rehearsal-evidence.json \
             PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider \
             --junitxml=/opt/rehearsal-repo/rehearsal-junit.xml 2>&1) | tee rehearsal-output.txt
