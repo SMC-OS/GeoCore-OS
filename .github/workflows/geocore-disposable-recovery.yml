@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "verify (read-only token scope and empty-environment check)"
+        description: "verify (read-only disposable token scope check) | probe-qa-template (read-only description of the existing QA services)"
         type: choice
-        options: [verify]
+        options: [verify, probe-qa-template]
         default: verify
   push:
     branches: [qa/disposable-recovery]
@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   verify:
+    if: ${{ inputs.mode != 'probe-qa-template' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -38,3 +39,17 @@ jobs:
       - name: Verify the token authenticates only against the exact disposable project and recovery environment
         shell: bash
         run: scripts/disposable/verify_token_scope.sh "$DISPOSABLE_PROJECT_ID" "$RECOVERY_ENVIRONMENT_ID" recovery
+
+  probe-qa-template:
+    if: ${{ inputs.mode == 'probe-qa-template' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Describe the existing isolated-QA services (read-only; names and non-secret settings only)
+        shell: bash
+        run: scripts/disposable/probe_qa_template.sh
