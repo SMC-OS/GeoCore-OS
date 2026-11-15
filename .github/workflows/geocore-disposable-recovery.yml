@@ -1,0 +1,40 @@
+name: GeoCore disposable replacement-infrastructure recovery
+
+# DISPOSABLE project geocore-disposable-qa-7f3c9a2e81, environment `recovery` ONLY. Never targets production, shared staging or the
+# existing isolated QA project (those ids are refused by name). Spending cap: $3 (owner-approved). Synthetic data only.
+# Manual dispatch only. mode=verify is read-only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "verify (read-only token scope and empty-environment check)"
+        type: choice
+        options: [verify]
+        default: verify
+  push:
+    branches: [qa/disposable-recovery]
+    paths: ['.github/workflows/geocore-disposable-recovery.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-disposable-recovery
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DISPOSABLE_PROJECT_ID: 482d0eff-ecd3-4457-8834-e0b49e897e42
+      RECOVERY_ENVIRONMENT_ID: 43eadd7f-40be-4cdf-acb8-e1a8b33ba3b8
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_DISPOSABLE_RECOVERY_RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Verify the token authenticates only against the exact disposable project and recovery environment
+        shell: bash
+        run: scripts/disposable/verify_token_scope.sh "$DISPOSABLE_PROJECT_ID" "$RECOVERY_ENVIRONMENT_ID" recovery
