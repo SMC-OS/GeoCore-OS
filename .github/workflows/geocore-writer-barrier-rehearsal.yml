@@ -48,8 +48,11 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE="$PWD/rehearsal-evidence.json" \
-            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider 2>&1 | tee rehearsal-output.txt
+          # The application drops to UID 10001 (as on Railway); /home/runner is not traversable by that user, so run from a copy.
+          sudo rm -rf /opt/rehearsal-repo && sudo cp -a "$PWD" /opt/rehearsal-repo && sudo chmod -R a+rX /opt/rehearsal-repo
+          (cd /opt/rehearsal-repo && sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE="$PWD/rehearsal-evidence.json" \
+            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider 2>&1) | tee rehearsal-output.txt
+          sudo cp /opt/rehearsal-repo/rehearsal-evidence.json . 2>/dev/null || true
           rc="${PIPESTATUS[0]}"
           grep -E "passed|failed|skipped|error" rehearsal-output.txt | tail -3
           exit "$rc"
