@@ -164,7 +164,7 @@ def restored_app_checks(rdsn, scratch, upr):
         docs = c.execute("select id::text, tenant_id::text, storage_filename, size_bytes from documents order by id").fetchall()
         owners = c.execute(
             """select u.id::text, u.tenant_id::text, u.token_version from users u join subscriptions s on s.tenant_id = u.tenant_id
-               where u.is_active and u.role = 'owner' and u.email_verified_at is not null and s.status in ('active','trialing')
+               where u.is_active and u.role = 'Owner' and u.email_verified_at is not null and s.status in ('active','trialing')
                  and exists (select 1 from documents d where d.tenant_id = u.tenant_id) order by u.created_at""").fetchall()
     check("synthetic document dataset is non-empty (database rows exist)", len(docs) > 0, f"{len(docs)} rows")
     by_path = {e["relative_path"]: e for e in upr["entries"]}
