@@ -8,8 +8,11 @@ is deliberately public — Stripe calls it directly and authenticates via
 signature verification instead of a bearer token.
 """
 
+from threading import BoundedSemaphore
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import require_role
 from app.auth.models import UserRole
@@ -40,10 +43,16 @@ from app.billing.trial import start_trial_if_eligible, trial_status
 from app.billing.service import BillingError, BillingUnavailable, WebhookSignatureError, billing_service
 from app.core.admission import admission_open, require_admission_open
 from app.database import crud
-from app.database.database import get_db
+from app.database.database import SessionLocal, get_db
 from app.database.models import User
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+# Per-process admission cap: a webhook can hold one shared DB connection while
+# reading Stripe. Reserve capacity for ordinary API traffic (default SQLAlchemy
+# pool has 5 persistent connections); overflow is retryable, never acknowledged.
+STRIPE_WEBHOOK_MAX_IN_FLIGHT = 3
+_webhook_slots = BoundedSemaphore(STRIPE_WEBHOOK_MAX_IN_FLIGHT)
 
 _PLAN_DISPLAY_NAMES = {
     PLAN_STARTER: "GeoCore Starter",
@@ -200,19 +209,34 @@ def resume_subscription(
     return _subscription_out(subscription)
 
 
+def _process_stripe_webhook(payload: bytes, signature_header: str | None) -> None:
+    # Own the synchronous SQLAlchemy session in the worker thread, including
+    # transaction cleanup. Do not share a session across concurrent requests.
+    with SessionLocal() as db:
+        billing_service.handle_webhook(db, payload, signature_header)
+
+
 @router.post("/webhook", include_in_schema=False)
-async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
-    """Public — Stripe calls this directly and authenticates the request
-    via its signature, not a bearer token. Never trust this payload
-    without app.billing.service verifying that signature first."""
+async def stripe_webhook(request: Request):
+    """Authenticate raw Stripe payloads. Blocking network/DB work runs in a
+    worker, with a bounded number of admitted webhooks per API process."""
     payload = await request.body()
     signature_header = request.headers.get("stripe-signature")
-
+    if not _webhook_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing webhook temporarily busy. Retry delivery.",
+            headers={"Retry-After": "5"},
+        )
     try:
-        billing_service.handle_webhook(db, payload, signature_header)
+        # Starlette's threadpool helper waits for the worker to finish, so the
+        # slot remains held through DB rollback/commit and session close.
+        await run_in_threadpool(_process_stripe_webhook, payload, signature_header)
     except BillingUnavailable:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Billing is not configured.")
     except WebhookSignatureError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid webhook signature.")
+    finally:
+        _webhook_slots.release()
 
     return {"received": True}
