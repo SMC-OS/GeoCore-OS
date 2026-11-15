@@ -68,6 +68,19 @@ provision_script_sh() {  # the script run by the pre-deploy step; reads its inpu
 set -e
 # A value stored through the CLI may carry a trailing newline; it must never become part of a password.
 clean() { printf '%s' "$1" | tr -d '\r\n'; }
+# Explicit database-revision assertion against the ACTUAL isolated QA database (read-only). Prints one marker line and
+# fails the container start, hence the deployment, on any mismatch. Declaring EXPECTED_MIGRATION alone proves nothing.
+python - "$(clean "${QA_EXPECT_MIGRATION:-}")" <<'PY'
+import os, sys
+import psycopg
+expected = sys.argv[1]
+dsn = os.environ["DATABASE_URL"].replace("postgresql+psycopg", "postgresql", 1)
+with psycopg.connect(dsn) as conn:
+    revs = [r[0] for r in conn.execute("select version_num from alembic_version").fetchall()]
+ok = bool(expected) and revs == [expected]
+print("QA_MIGRATION|%s|%s" % (",".join(revs), "PASS" if ok else "FAIL"), flush=True)
+sys.exit(0 if ok else 1)
+PY
 echo "$QA_PROVISION_PY_B64" | base64 -d > /tmp/qa_provision.py
 SYNTHETIC_OWNER_PASSWORD="$(clean "$QA_OWNER_A_PW")" python - --email "$(clean "$QA_OWNER_A_EMAIL")" --company "$(clean "$QA_OWNER_A_COMPANY")" --confirm-environment acceptance --idempotent --verify-login < /tmp/qa_provision.py
 SYNTHETIC_OWNER_PASSWORD="$(clean "$QA_OWNER_B_PW")" python - --email "$(clean "$QA_OWNER_B_EMAIL")" --company "$(clean "$QA_OWNER_B_COMPANY")" --confirm-environment acceptance --idempotent --verify-login < /tmp/qa_provision.py
@@ -79,7 +92,7 @@ SH
 # Output lines start with "DRILL|"; scripts must never print credentials.
 QA_TASK_START='sh -c '"'"'python -m app.core.migrate_gate || exit 1; if [ -n "$QA_TASK_SH_B64" ]; then (echo "$QA_TASK_SH_B64" | base64 -d | sh) & fi; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log'"'"''
 
-QA_TEMP_VARS=(QA_TASK_SH_B64 QA_TASK_TGZ_B64 QA_PROVISION_PY_B64 QA_PROVISION_SH_B64 QA_OWNER_A_EMAIL QA_OWNER_A_COMPANY QA_OWNER_A_PW QA_OWNER_B_EMAIL QA_OWNER_B_COMPANY QA_OWNER_B_PW)
+QA_TEMP_VARS=(QA_EXPECT_MIGRATION QA_TASK_SH_B64 QA_TASK_TGZ_B64 QA_PROVISION_PY_B64 QA_PROVISION_SH_B64 QA_OWNER_A_EMAIL QA_OWNER_A_COMPANY QA_OWNER_A_PW QA_OWNER_B_EMAIL QA_OWNER_B_COMPANY QA_OWNER_B_PW)
 
 set_qa_var() {  # set_qa_var KEY  (value on stdin; never on a command line)
   railway variable set "$1" --stdin --service geocore-api-qa --environment "$QA_ENV" --skip-deploys >/dev/null
@@ -131,7 +144,7 @@ deployment_log_summary() {  # deployment_log_summary <deployment-id>: only lines
   for flag in --build --deployment; do
     echo "--- logs $flag"
     railway logs "$id" "$flag" --service geocore-api-qa --environment "$QA_ENV" --lines 400 2>&1 \
-      | grep -E "QA_PROVISION|provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25 || true
+      | grep -E "QA_MIGRATION|QA_PROVISION|provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25 || true
   done
 }
 

@@ -135,6 +135,7 @@ jobs:
           echo "::add-mask::$PW_B"
           base64 -w0 scripts/qa/provision_synthetic_owner.py | set_qa_var QA_PROVISION_PY_B64
           provision_script_sh | base64 -w0 | set_qa_var QA_PROVISION_SH_B64
+          printf '%s' "$EXPECTED_MIGRATION" | set_qa_var QA_EXPECT_MIGRATION
           printf '%s' "stone-gate-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_A_EMAIL
           printf '%s' "QA acceptance A $RUN" | set_qa_var QA_OWNER_A_COMPANY
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
@@ -158,6 +159,10 @@ jobs:
           [[ "$PROV_ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]]
           echo "Provisioned candidate $PROV_ID $SHA" | tee -a qa-identity.txt
           deployment_log_summary "$PROV_ID" | tee -a qa-identity.txt
+          # The deployed database must report exactly the expected Alembic head (queried inside the container).
+          MIG="$(railway logs "$PROV_ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 2000 2>&1 | grep -a '^QA_MIGRATION|' | tail -1 | tr -d '\r')"
+          echo "$MIG" | tee -a qa-identity.txt
+          [[ "$MIG" == "QA_MIGRATION|$EXPECTED_MIGRATION|PASS" ]] || { echo "MIGRATION HEAD ASSERTION FAILED (expected $EXPECTED_MIGRATION)"; exit 1; }
           wait_for_ready "$QA_API" 300 | tee -a qa-identity.txt
           EMAIL_A="stone-gate-$RUN@acceptance.invalid"
           EMAIL_B="stone-gate-other-$RUN@acceptance.invalid"
