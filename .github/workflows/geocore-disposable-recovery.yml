@@ -80,8 +80,9 @@ jobs:
           echo "task bundle base64 bytes: $(base64 -w0 /tmp/capture-src.tgz | wc -c) (Railway variable limit 32768)"
           run_container_task scripts/qa/container_tasks/capture.sh /tmp/capture-src.tgz; task_rc=$?
           read -r TASK_DEP _ _ < <(latest_deployment)
-          railway logs "$TASK_DEP" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 30000 2>&1 | tr -d '\r' > capture-log.txt
+          railway logs "$TASK_DEP" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 5000 2>&1 | tr -d '\r' > capture-log.txt
           echo "task deployment log lines: $(wc -l < capture-log.txt), bundle lines: $(grep -c 'BUNDLE|' capture-log.txt)"
+          if [[ "$(grep -c 'BUNDLE|' capture-log.txt)" == 0 ]]; then echo "first log line (non-bundle, for diagnosis): $(head -1 capture-log.txt | cut -c1-200)"; fi
           python3 scripts/disposable/bundle_transfer.py decode capture-log.txt recovery-bundle.tgz; decode_rc=$?
           rm -f capture-log.txt
           restore_qa_config_pinned "$EXPECTED_SHA"; restore_rc=$?
