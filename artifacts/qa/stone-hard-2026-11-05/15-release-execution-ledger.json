@@ -1,7 +1,7 @@
 {
   "relation_to_existing_ledger": "This ledger is the gate-level release view. The detailed 110-cell / 18-journey / 12-gate Stone-Hard ledger (04-ledger-reconciled.json, 01-requirements-matrix.csv) is unchanged and not reset: its unknown cells stay unknown until each has evidence in the environment it names. Nothing here closes any of them.",
   "title": "GeoCore release execution ledger",
-  "as_of": "2026-11-15 (final hosted recovery closure)",
+  "as_of": "2026-11-15 (owner acceptance pack prepared; PR #77 merged)",
   "verdict": "HARD NO-GO (HOLD). Product candidate f503041 has strong deployed isolated-QA evidence; mandatory gates remain open: hosted Checkout (both outcomes) and first-ever customer Checkout, real email click-through, replacement-infrastructure recovery, shared-staging recovery point, monitoring/alert delivery, support, legal/commercial adoption, catalogue import and owner decisions.",
   "rules": "Evidence is tagged by environment and never counted for another. A gate is VERIFIED only in the environments listed in verified_in.",
   "gates": [
@@ -687,11 +687,15 @@
         {
           "env": "isolated_qa",
           "what": "Pinned deploy workflow 43727031737 (API then web, exact SHA, migration head, no traceback); exact-SHA restoration helper proven live in run 43734792050 (RESTORED_PINNED api=fbe5df50.../f503041 web=d27b912c.../f503041 admission=closed start_predeploy=baseline rc=0) and by 5 stubbed tests. The earlier container-task restorations ended on the branch-head build 2b2f514 (runtime-identical, not the pinned candidate) - corrected in PR #77."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "PR #77 (recovery tooling) reviewed at head 154fce1: both CI runs (43734784943 push, 43735275937 PR) backend, frontend, e2e, dependency-audit, secret-scan all success; runtime paths byte-identical to f503041; merged as 631477bbbc55236271d6bbd5d88930055787c4b7. Review record in doc 22 section 1. LOW follow-ups: verifier checks count not names; drill does not refuse to run while temporary STRIPE_/RESEND_ variables are set."
         }
       ],
       "status": "VERIFIED",
       "owner": "Agent",
-      "remaining": "Shared staging needs its own approved A2 run.",
+      "remaining": "Shared staging needs its own approved A2 run. Acceptance tooling branch qa/stripe-ext (6704576) is NOT merged.",
       "blocks_initial_release": false
     },
     {
@@ -965,7 +969,7 @@
       ],
       "status": "VERIFIED",
       "owner": "Agent",
-      "remaining": "Rehearsal scope only. It is not a staging or production barrier run and not hosted recovery. PR #77 must be reviewed and merged with green CI.",
+      "remaining": "Rehearsal scope only (disposable runner, local PostgreSQL). Tooling merged in PR #77 (631477b). Not a staging or production barrier run and not hosted recovery.",
       "blocks_initial_release": true
     },
     {
@@ -978,7 +982,7 @@
       "evidence": [],
       "status": "BLOCKED",
       "owner": "Owner (approval for paid resources)",
-      "remaining": "NOT EXECUTED. Proposal and measurements in doc 21 B9; needs approval to provision a disposable Postgres service and volume.",
+      "remaining": "NOT EXECUTED. Exercise specified in doc 22 section 4 (new PostgreSQL 18 + empty volume, restore from bundle and integrity record only, two-tenant retrieval, timing, teardown); estimated about $0.30-$1.40, cap $3 proposed; needs owner approval. Do not share data stores with the first-customer environment (doc 22 section 4.1).",
       "blocks_initial_release": true
     },
     {
@@ -991,7 +995,7 @@
       "evidence": [],
       "status": "BLOCKED",
       "owner": "Owner (approval) and agent",
-      "remaining": "NOT EXECUTED. Needs written approval of the disposable environment (doc 21 B8); admission must not be opened in the existing acceptance environment.",
+      "remaining": "NOT EXECUTED. Specification, isolation safeguards, resource estimate (about $1/day, cap $10 proposed) and teardown in doc 22 section 2. The product's admission control is a binary open/closed switch with no identity allowlist, so restriction is by environment isolation (unguessable names, no DNS, time-boxed admission, Resend sender that only reaches the account owner). Needs owner approval of cost and the disposable Railway project/tokens; admission must not be opened in the existing acceptance environment.",
       "blocks_initial_release": true
     }
   ]

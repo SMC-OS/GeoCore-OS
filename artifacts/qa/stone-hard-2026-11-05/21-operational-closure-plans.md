@@ -131,3 +131,6 @@ Approval needed: permission to provision the two paid resources for under a day 
 | 11 | Review and merge PR #77 (recovery tooling) after required CI is green; decide whether `qa/stripe-ext` is integrated | tooling integration | reviewer |
 
 Smallest sequence to a controlled pilot: items 2 and 1 together (mailbox + disposable environment) → item 3 → item 7 (support and alerts) → item 8 (legal) → item 10 (defaults) → item 9 (catalogue) → items 5 and 6 (staging window and production read-only inspection) → items 4 and 11. Production deployment, shared-staging replacement and public admission stay out of scope until each gate above is explicitly verified.
+
+## B11. Pointer — acceptance pack and detailed specifications
+Doc 22 supersedes the outline in B7-B10 where it differs: detailed provisioning specification and teardown for the disposable first-customer environment, the owner-assisted Checkout workflow design and the held instruction sheet, the replacement-infrastructure recovery exercise with cost estimates, the sequential-reuse assessment, and the single thirteen-item owner acceptance table with decision, default, unblocks, mandatory flag and PASS evidence.

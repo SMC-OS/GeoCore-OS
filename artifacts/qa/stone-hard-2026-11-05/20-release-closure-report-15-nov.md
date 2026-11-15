@@ -250,3 +250,10 @@ The container-task restoration helper restored configuration but left the servic
 
 ### 12.10 Verdict
 **HOLD / NO-GO for customer release stays.** The product candidate has strong deployed evidence for functionality, isolation, security, billing lifecycle and logical recovery. It is not releasable because mandatory gates remain open: hosted Checkout (both outcomes) and first-ever customer Checkout, real email click-through, replacement-infrastructure recovery, shared-staging recovery point, monitoring and alert delivery, support, legal/commercial adoption, catalogue import and owner decisions. Green CI is not treated as release readiness.
+
+## 13. UPDATE — PR #77 review and merge; owner acceptance pack (15 Nov)
+- **PR #77** (recovery tooling) reviewed at head `154fce1a05466268990057717bb651130a094433`: both CI runs green on all five jobs, nine tooling files only, runtime paths byte-identical to `f503041`, no production or shared-staging reference. Merged as `631477bbbc55236271d6bbd5d88930055787c4b7` on the closure branch following the owner's instruction "merge pr77 when green". Findings and two LOW follow-ups are in doc 22 section 1. Product candidate unchanged.
+- The matched hosted recovery, the writer-barrier rehearsal and exact-SHA restoration evidence in section 12 stand; nothing was repeated.
+- **Owner acceptance pack and provisioning specifications: doc 22.** Nothing was provisioned, no paid resource was created, admission was not opened, no owner approval, mailbox receipt, legal acceptance or alert delivery is assumed.
+- Design fact recorded: admission is a binary `open|closed` switch with no per-identity allowlist, so the first-customer environment must be restricted by isolation, not by the application (doc 22 section 2.1).
+- Verdict unchanged: **HOLD / NO-GO**. Remaining sequence: doc 22 section 6.
