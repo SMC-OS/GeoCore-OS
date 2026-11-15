@@ -31,6 +31,7 @@ jobs:
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
       RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
       TASK: ${{ inputs.task || 'inspect' }}
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
@@ -47,6 +48,7 @@ jobs:
             echo "bundle base64 bytes: $(base64 -w0 "$bundle" | wc -c) (Railway variable limit 32768)"
           fi
           run_container_task "scripts/qa/container_tasks/$TASK.sh" "$bundle"; task_rc=$?
-          restore_qa_config; restore_rc=$?
+          # Exact restoration: original commands, no temporary variables, then the immutable candidate (never a branch-head build).
+          restore_qa_config_pinned "$EXPECTED_SHA"; restore_rc=$?
           echo "task_rc=$task_rc restore_rc=$restore_rc"
           exit $(( task_rc != 0 || restore_rc != 0 ))

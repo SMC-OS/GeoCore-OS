@@ -40,8 +40,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-# `python3 - < writer_barrier.py` (the way it is run inside the container) has no __file__
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2] if "__file__" in globals() else Path("/nonexistent-repository-root")
+# `python3 - < writer_barrier.py` (the way it is run inside the container) has no usable __file__: before Python 3.12 the name is
+# undefined, and from 3.12 it is the literal "<stdin>", which would resolve against the working directory and make the repository
+# root "/" (every state path then looks like it is inside the repository and is refused). Only a real file counts.
+def _real_file() -> Path | None:
+    name = globals().get("__file__")
+    if not name or str(name).startswith("<"):
+        return None
+    path = Path(name)
+    return path.resolve() if path.is_file() else None
+
+
+_REAL_FILE = _real_file()
+REPOSITORY_ROOT = _REAL_FILE.parents[2] if _REAL_FILE is not None else Path("/nonexistent-repository-root")
 ADMIN_DSN_ENV = "BARRIER_ADMIN_DSN"
 APP_DSN_ENV = "BARRIER_APP_DSN"
 ADMIN_APP_NAME = "geocore_barrier_admin"
@@ -292,10 +303,10 @@ def _spawn_holder(record_path: Path, wait_s: float) -> tuple[int, int]:
     import select
     import subprocess
 
-    if "__file__" not in globals():
+    if _REAL_FILE is None:
         raise BarrierError("db-engage must run from a file, not piped on stdin")
     proc = subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "db-hold", "--record", str(record_path), "--lock-wait", str(wait_s)],
+        [sys.executable, str(_REAL_FILE), "db-hold", "--record", str(record_path), "--lock-wait", str(wait_s)],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     ready, _, _ = select.select([proc.stdout], [], [], wait_s + 15)

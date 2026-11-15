@@ -188,3 +188,38 @@ restore_qa_config() {  # restore the original start command, remove temporary va
   wait_for_ready "$QA_API" 240 || rc=1
   return $rc
 }
+
+QA_WEB_SVC="8aa9dce6-49c9-4da2-b4a7-288de10e0904"
+
+pin_candidate_api() {  # pin_candidate_api <40-hex-sha>: deploy EXACTLY that commit to the isolated QA API with the current (restored)
+  # configuration and wait for that deployment id to be a stable SUCCESS at exactly that commit. Branch-head builds never qualify.
+  local sha="$1" prev out id nid nstatus ncommit
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "PIN FAILED: not a full commit sha"; return 1; }
+  read -r prev _ _ < <(latest_deployment)
+  out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' \
+        "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$sha" '{s:$s,e:$e,sha:$sha}')")" || { echo "PIN FAILED: request"; return 1; }
+  id="$(jq -er 'if (.errors // [])|length > 0 then error("rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || { echo "PIN FAILED: Railway rejected the request"; return 1; }
+  wait_for_new_deployment "$prev" 1200 || return 1
+  wait_for_stable_success 1200 || return 1
+  read -r nid nstatus ncommit < <(latest_deployment)
+  [[ "$nid" == "$id" && "$nstatus" == SUCCESS && "$ncommit" == "$sha" ]] || { echo "PIN FAILED: active deployment $nid $nstatus $ncommit is not the requested $id at $sha"; return 1; }
+  echo "PINNED API deployment $nid $nstatus $ncommit"
+}
+
+restore_qa_config_pinned() {  # restore_qa_config_pinned <sha>: full restoration to the exact authorised candidate. Isolated QA only.
+  local sha="$1" rc=0 wid wstatus wcommit
+  restore_qa_config || rc=1                                   # original start command, temporary variables removed, stable, ready
+  if [[ "$(predeploy_get)" != "$QA_ORIG_PREDEPLOY" ]]; then predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1; fi
+  [[ "$(start_get)" == "$QA_ORIG_START" && "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || { echo "RESTORE FAILED: start/predeploy differ from the reviewed baseline"; rc=1; }
+  pin_candidate_api "$sha" || rc=1                            # exact candidate, exact deployment id, stable
+  wait_for_ready "$QA_API" 300 || rc=1
+  curl -fsS --max-time 30 "$QA_API/health" >/dev/null || { echo "RESTORE FAILED: health"; rc=1; }
+  read -r wid wstatus wcommit < <(railway deployment list --service geocore-web-qa --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash)"')
+  [[ "$wstatus" == SUCCESS && "$wcommit" == "$sha" ]] || { echo "RESTORE FAILED: web deployment $wid $wstatus $wcommit is not the exact candidate"; rc=1; }
+  [[ "$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -er '.signups_open | tostring')" == false ]] || { echo "RESTORE FAILED: admission is not closed"; rc=1; }
+  railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("QA_") or startswith("STRIPE_") or startswith("RESEND_"))) | length == 0' >/dev/null || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }
+  read -r nid nstatus ncommit < <(latest_deployment)
+  echo "RESTORED_PINNED api=$nid/$nstatus/$ncommit web=$wid/$wstatus/$wcommit candidate=$sha admission=closed start_predeploy=baseline rc=$rc"
+  return $rc
+}
+
