@@ -38,7 +38,7 @@ jobs:
       - run: npm install --global @railway/cli@4
       - name: Verify the token authenticates only against the exact disposable project and recovery environment
         shell: bash
-        run: scripts/disposable/verify_token_scope.sh "$DISPOSABLE_PROJECT_ID" "$RECOVERY_ENVIRONMENT_ID" recovery
+        run: bash scripts/disposable/verify_token_scope.sh "$DISPOSABLE_PROJECT_ID" "$RECOVERY_ENVIRONMENT_ID" recovery
 
   probe-qa-template:
     if: ${{ inputs.mode == 'probe-qa-template' }}
@@ -52,4 +52,4 @@ jobs:
       - run: npm install --global @railway/cli@4
       - name: Describe the existing isolated-QA services (read-only; names and non-secret settings only)
         shell: bash
-        run: scripts/disposable/probe_qa_template.sh
+        run: bash scripts/disposable/probe_qa_template.sh
