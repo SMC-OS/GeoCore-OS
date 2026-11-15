@@ -218,18 +218,17 @@ class BillingService:
         except Exception as exc:
             raise WebhookSignatureError(str(exc)) from exc
 
-        if not crud.mark_stripe_event_processed(db, event["id"], event["type"]):
-            return  # already processed — idempotent no-op on a retried delivery
-
-        # The processed marker and the event's effect commit together. If
-        # the handler fails, both roll back and the error reaches Stripe as
-        # a 5xx, so its retry applies the event instead of being dropped as
-        # a duplicate of an event that never took effect.
+        # The marker and state share one transaction. Bound waits before
+        # inserting the marker too: a concurrent duplicate can wait on the
+        # unique index while the first delivery is still in flight.
         try:
+            self._set_webhook_lock_timeout(db)
+            if not crud.mark_stripe_event_processed(db, event["id"], event["type"]):
+                return  # already processed — idempotent no-op on a retried delivery
             handler = self._EVENT_HANDLERS.get(event["type"])
             if handler is not None:
                 event_object = event["data"]["object"]
-                to_dict = getattr(event_object, "to_dict", None)
+                to_dict = getattr(event_object, "to_dict_recursive", None) or getattr(event_object, "to_dict", None)
                 if callable(to_dict):
                     event_object = to_dict()
                 event_at = self._event_time(event)
@@ -238,13 +237,15 @@ class BillingService:
                     # snapshot. Stripe timestamps have one-second resolution and
                     # cross-type delivery is unordered. Reconcile under a tenant lock.
                     self._reconcile_stripe_event(db, stripe, event["type"], event_object, event_at)
-                else:
-                    # Historical internal fixtures / payloads without a created field.
-                    # The production Stripe event contract always includes created.
+                elif isinstance(event, dict):
+                    # Historical internal dict fixtures only. A real signed SDK
+                    # event must never silently fall back to snapshot mutation.
                     tenant_id = self._event_tenant_id(db, event["type"], event_object)
                     if tenant_id is not None:
                         self._lock_subscription(db, tenant_id, bounded_wait=True)
                     handler(self, db, event_object)
+                else:
+                    raise BillingError("Stripe event missing valid created timestamp")
             db.commit()
         except BillingError as exc:
             db.rollback()
@@ -272,13 +273,18 @@ class BillingService:
         return datetime.fromtimestamp(created, tz=timezone.utc)
 
     @staticmethod
+    def _set_webhook_lock_timeout(db: Session) -> None:
+        if STRIPE_WEBHOOK_LOCK_WAIT_SECONDS:
+            # SET LOCAL is transaction-scoped; never interpolate request data.
+            db.execute(text(f"SET LOCAL lock_timeout = {int(STRIPE_WEBHOOK_LOCK_WAIT_SECONDS * 1000)}"))
+
+    @staticmethod
     def _lock_subscription(db: Session, tenant_id: uuid.UUID, *, bounded_wait: bool = False) -> Subscription | None:
         # Lock the tenant rather than just its subscription: first linkage may
         # not yet have a row. All webhook writes and cancellation share this
         # lock, and it is held until the marker and the state commit together.
-        if bounded_wait and STRIPE_WEBHOOK_LOCK_WAIT_SECONDS:
-            # SET LOCAL lasts for this transaction only; the value is a validated number, never user input.
-            db.execute(text(f"SET LOCAL lock_timeout = {int(STRIPE_WEBHOOK_LOCK_WAIT_SECONDS * 1000)}"))
+        if bounded_wait:
+            BillingService._set_webhook_lock_timeout(db)
         db.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
         return db.scalars(
             select(Subscription).where(Subscription.tenant_id == tenant_id)

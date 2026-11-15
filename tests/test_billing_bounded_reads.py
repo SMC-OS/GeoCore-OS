@@ -431,3 +431,103 @@ def test_permanent_and_transient_failures_are_logged_distinctly(owner_and_staff,
         assert "sk_test" not in text_ and SECRET not in text_
     finally:
         _drop_tenant(other)
+
+
+def test_real_sdk_event_without_created_never_uses_snapshot(owner_and_staff, fake):
+    tenant, _, _ = owner_and_staff
+    sub = SUB["sub_missing_created"]
+    fake.subs[sub] = _subscription(tenant, sub, "active")
+    event = _event(tenant, sub, "past_due", 1000)
+    del event["created"]
+    before = _status(tenant)
+    with pytest.raises(BillingError, match="created timestamp"):
+        _deliver(event)
+    assert not _marker(event["id"]) and _status(tenant) == before
+    assert not fake.hits
+
+
+def test_duplicate_in_flight_has_bounded_marker_wait(owner_and_staff, fake, monkeypatch):
+    """The idempotency insert can block before the tenant lock is reached."""
+    tenant, _, _ = owner_and_staff
+    sub = SUB["sub_duplicate_wait"]
+    fake.subs[sub] = _subscription(tenant, sub, "active")
+    event = _event(tenant, sub, "active", 1000)
+    entered, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(svc, "STRIPE_WEBHOOK_LOCK_WAIT_SECONDS", 0.3)
+    first_service = BillingService(stripe)
+    read = first_service._read_subscription
+
+    def hold(stripe_module, sub_id):
+        entered.set()
+        if not release.wait(10):
+            raise RuntimeError("test release timeout")
+        return read(stripe_module, sub_id)
+
+    monkeypatch.setattr(first_service, "_read_subscription", hold)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(_deliver, event, first_service)
+        try:
+            assert entered.wait(5)
+            duplicate = pool.submit(_deliver, event)
+            from sqlalchemy.exc import OperationalError
+            with pytest.raises(OperationalError):
+                duplicate.result(timeout=3)
+        finally:
+            release.set()
+        first.result(timeout=10)
+    assert _marker(event["id"]) and _status(tenant) == "active"
+    before = len(fake.hits)
+    _deliver(event)
+    assert len(fake.hits) == before
+
+
+def test_http_webhook_does_not_block_readiness_and_rejects_overload(client, owner_and_staff, fake, monkeypatch):
+    """Exercise the actual ASGI HTTP route, not just threaded service calls."""
+    import importlib
+    router_module = importlib.import_module("app.billing.router")
+    assert router_module.STRIPE_WEBHOOK_MAX_IN_FLIGHT == 3
+    # One slot makes saturation deterministic without creating extra tenants.
+    monkeypatch.setattr(router_module, "_webhook_slots", threading.BoundedSemaphore(1))
+    service = BillingService(stripe)
+    monkeypatch.setattr(router_module, "billing_service", service)
+    tenant, _, _ = owner_and_staff
+    sub = SUB["sub_http_worker"]
+    fake.subs[sub] = _subscription(tenant, sub, "active")
+    first_event = _event(tenant, sub, "trialing", 1000)
+    second_event = _event(tenant, sub, "past_due", 1001)
+    entered, release = threading.Event(), threading.Event()
+    read = service._read_subscription
+
+    def hold(stripe_module, sub_id):
+        entered.set()
+        if not release.wait(10):
+            raise RuntimeError("test release timeout")
+        return read(stripe_module, sub_id)
+
+    monkeypatch.setattr(service, "_read_subscription", hold)
+
+    def post(event):
+        payload, signature = _signed(event)
+        return client.post("/api/v1/billing/webhook", content=payload,
+                           headers={"stripe-signature": signature, "Content-Type": "application/json"})
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(post, first_event)
+        try:
+            assert entered.wait(5)
+            health = pool.submit(client.get, "/ready")
+            overloaded = pool.submit(post, second_event)
+            assert health.result(timeout=3).status_code == 200
+            response = overloaded.result(timeout=3)
+            assert response.status_code == 503
+            assert response.headers.get("retry-after") == "5"
+            assert not _marker(second_event["id"])
+        finally:
+            release.set()
+        assert first.result(timeout=10).status_code == 200
+
+    # Stripe retry is accepted once capacity is available; the stale payload
+    # cannot revert the real current subscription status.
+    assert post(second_event).status_code == 200
+    assert _marker(first_event["id"]) and _marker(second_event["id"])
+    assert _status(tenant) == "active"
