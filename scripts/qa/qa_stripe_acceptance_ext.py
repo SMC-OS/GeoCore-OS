@@ -206,23 +206,30 @@ def run():
         if not (bad and good):
             rec("failed renewal and recovery", "BLOCKED", "stripe", "could not attach Stripe test payment methods")
         else:
-            stripe_req("POST", "/subscriptions/" + sub_id, {"default_payment_method": bad, "trial_end": "now", "proration_behavior": "none"})
+            cur_status = stripe_req("GET", "/subscriptions/" + sub_id)[1].get("status")
+            prev_invoice = stripe_req("GET", "/subscriptions/" + sub_id)[1].get("latest_invoice")
+            if cur_status == "trialing":
+                stripe_req("POST", "/subscriptions/" + sub_id, {"default_payment_method": bad, "trial_end": "now", "proration_behavior": "none"})
+            else:
+                # Active contract: force an immediate renewal-style invoice that the failing test card cannot pay.
+                stripe_req("POST", "/subscriptions/" + sub_id, {"default_payment_method": bad, "billing_cycle_anchor": "now",
+                                                                 "proration_behavior": "always_invoice", "payment_behavior": "allow_incomplete"})
             inv = None
             end = time.monotonic() + 240
             while time.monotonic() < end and not inv:
                 latest = stripe_req("GET", "/subscriptions/" + sub_id)[1].get("latest_invoice")
-                if isinstance(latest, str) and latest.startswith("in_"):
+                if isinstance(latest, str) and latest.startswith("in_") and latest != prev_invoice:
                     i = stripe_req("GET", "/invoices/" + latest)[1]
                     if i.get("total", 0) > 0:
                         inv = i
                 time.sleep(5)
             if not inv:
-                rec("failed renewal and recovery", "BLOCKED", "stripe", "no non-zero invoice appeared after ending the trial")
+                rec("failed renewal and recovery", "BLOCKED", "stripe", "no new non-zero invoice appeared")
             else:
                 if inv.get("status") == "draft":
                     inv = stripe_req("POST", "/invoices/" + inv["id"] + "/finalize", {"auto_advance": "false"})[1]
                 pay_code = stripe_req("POST", "/invoices/" + inv["id"] + "/pay", {"payment_method": bad})[0]
-                ok("Stripe declines the renewal payment", pay_code in (402, 400), "stripe", f"HTTP {pay_code}")
+                ok("Stripe declines the renewal payment (card_declined)", pay_code == 402, "stripe", f"HTTP {pay_code}")
                 pd = B.poll(lambda x: x.get("status") == "past_due", 240)
                 ok("failed renewal moves the workspace to past_due via actual Stripe webhooks", pd is not None, "stripe")
                 ok("past_due workspace is restricted from workspace routes (402) but can still reach billing", B.workspace_code() == 402 and B.call("GET", "/billing/subscription")[0] == 200, "stripe")
