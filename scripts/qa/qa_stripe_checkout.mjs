@@ -3,7 +3,7 @@
 // Input comes from environment variables only; nothing sensitive is printed (no URLs, no emails, no card data).
 // Output: one JSON line  {"mode":..,"outcome":..,"detail":..}  where outcome is one of
 //   complete | declined | portal_loaded | blocked
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 const mode = process.env.MODE;
 const url = process.env.TARGET_URL || "";

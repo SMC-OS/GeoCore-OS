@@ -214,6 +214,7 @@ jobs:
           echo "restored start/predeploy equal reviewed baseline: $([[ "$(start_get)" == "$QA_ORIG_START" && "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo yes || echo NO)" >> qa-stripe-identity.txt
           railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null && echo "restored: no STRIPE_/QA_ variables remain" >> qa-stripe-identity.txt || rc=1
           echo "QA configuration restoration exit=$rc" >> qa-stripe-identity.txt
+          echo "---- redacted identity and restoration evidence"; cat qa-stripe-identity.txt
           exit "$rc"
       - name: Retain redacted billing evidence
         if: always()

@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -116,7 +117,8 @@ def browser(mode, url, email, card=""):
                 return json.loads(line)
             except ValueError:
                 break
-    return {"outcome": "blocked", "detail": "no browser result"}
+    tail = re.sub(r"https?://\S+|[\w.+-]+@[\w.-]+", "<redacted>", (proc.stderr or "").strip().splitlines()[-1] if (proc.stderr or "").strip() else "")
+    return {"outcome": "blocked", "detail": "no browser result; stderr: " + tail[:160]}
 
 
 def make_api_sub(owner, tenant, customer=None, days=10):
@@ -372,20 +374,23 @@ def run():
                 time.sleep(0.5)
         with cf.ThreadPoolExecutor(max_workers=1) as sx:
             fut = sx.submit(sampler)
-            sat = burst(30, lambda i: (lambda ev: (ev, post_event(ev, "customer.subscription.updated", sub_obj(sub_id, cust_id, TB, "active"), int(time.time()))))(evt()))
+            sat = []
+            t_end = time.monotonic() + 12  # sustained saturation, not a single instant
+            while time.monotonic() < t_end:
+                sat += burst(30, lambda i: (lambda ev: (ev, post_event(ev, "customer.subscription.updated", sub_obj(sub_id, cust_id, TB, "active"), int(time.time()))))(evt()))
             stop = True
             fut.result()
         codes = [r[1][0] for r in sat]
         n503 = [r for r in sat if r[1][0] == 503]
-        rec("webhook burst distribution", "NOTE", "local-signed", f"30 concurrent: 200={codes.count(200)} 503={codes.count(503)} other={len([c for c in codes if c not in (200, 503)])}")
+        rec("webhook burst distribution", "NOTE", "local-signed", f"{len(sat)} events in 30-way bursts over ~12s: 200={codes.count(200)} 503={codes.count(503)} other={len([c for c in codes if c not in (200, 503)])}")
         ok("burst: every response is 200 or 503", all(c in (200, 503) for c in codes), "local-signed")
         if n503:
             ok("burst: every 503 carries Retry-After", all(r[1][1] for r in n503), "local-signed")
-            redeliver = [post_event(ev, "customer.subscription.updated", sub_obj(sub_id, cust_id, TB, "active"), int(time.time()))[0] for ev, _ in n503]
+            redeliver = [post_event(ev, "customer.subscription.updated", sub_obj(sub_id, cust_id, TB, "active"), int(time.time()))[0] for ev, _ in n503[:20]]
             ok("503-rejected events succeed on redelivery", all(c == 200 for c in redeliver), "local-signed", str(sorted(set(redeliver))))
         else:
             rec("webhook concurrency saturation (HTTP 503) observed", "BLOCKED", "local-signed", "30-way burst did not reach the in-flight cap; 503 recovery not proven on the deployed service (CI/local tests cover it)")
-        ok("API stays responsive during the webhook burst (health + authenticated read)", not errors and bool(lat) and max(lat) < 15, "local-signed",
+        ok("API stays responsive during the webhook burst (health + authenticated read)", not errors and len(lat) >= 10 and max(lat) < 15, "local-signed",
            f"samples={len(lat)} max_s={max(lat) if lat else 'n/a'} errors={len(errors)}")
         ok("state canonical after the burst", B.sub().get("status") == "active" and B.workspace_code() == 200, "local-signed")
     finally:
