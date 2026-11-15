@@ -1,0 +1,65 @@
+name: GeoCore writer-barrier rehearsal (disposable local PostgreSQL on the runner)
+
+# Runs tests/test_writer_barrier_rehearsal.py (28 tests) on a GitHub-hosted runner that satisfies its prerequisites: root, PostgreSQL
+# server binaries, setpriv and an interpreter UID 10001 can execute. Everything is local and disposable: a throwaway cluster on the
+# runner, no Railway token, no Stripe key, no QA or production access. Manual dispatch only.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/barrier-rehearsal]
+    paths: ['.github/workflows/geocore-writer-barrier-rehearsal.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Prove the code under test is the product candidate (runtime paths identical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          git cat-file -e "$EXPECTED_SHA^{commit}"
+          git diff --quiet "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}" && echo "runtime paths identical to $EXPECTED_SHA at $(git rev-parse HEAD)"
+      - name: PostgreSQL server binaries and an interpreter the application UID can run
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql util-linux
+          sudo systemctl stop postgresql || true
+          ls /usr/lib/postgresql/*/bin/initdb
+          which setpriv
+          sudo python3 -m venv /opt/rehearsal-venv
+          sudo /opt/rehearsal-venv/bin/pip install -q -r requirements.txt
+          sudo chmod -R a+rX /opt/rehearsal-venv
+          sudo -u nobody /opt/rehearsal-venv/bin/python -c "import fastapi, psycopg, alembic; print('interpreter usable by an unprivileged user')"
+      - name: Run all rehearsal tests as root
+        shell: bash
+        run: |
+          set -uo pipefail
+          sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE="$PWD/rehearsal-evidence.json" \
+            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider 2>&1 | tee rehearsal-output.txt
+          rc="${PIPESTATUS[0]}"
+          grep -E "passed|failed|skipped|error" rehearsal-output.txt | tail -3
+          exit "$rc"
+      - name: Retain redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-writer-barrier-rehearsal
+          path: |
+            rehearsal-output.txt
+            rehearsal-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
