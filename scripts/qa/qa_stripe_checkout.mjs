@@ -17,6 +17,7 @@ if (host !== allowed) {
   process.exit(0);
 }
 
+let step = "launch";
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
@@ -26,6 +27,7 @@ try {
   const pageErrors = [];
   page.on("requestfailed", (r) => { try { failedHosts.add(new URL(r.url()).hostname); } catch (_) {} });
   page.on("pageerror", (e) => { if (pageErrors.length < 3) pageErrors.push(String(e && e.name ? e.name : "error")); });
+  step = "navigate";
   let navStatus = "none";
   let navError = "";
   try {
@@ -81,13 +83,17 @@ try {
         out("blocked", `${why}; frames=${frames} captcha=${captcha} labels=${JSON.stringify(labels)} inputs=${JSON.stringify(autos)}`);
       };
       // The newer layout may default to another payment method: choose Card when a selector exists.
+      step = "select-card-method";
       const cardChoice = page.getByRole("radio", { name: /card/i }).first();
       if ((await cardChoice.count()) > 0) await cardChoice.click().catch(() => {});
+      step = "find-card-number";
       const number = await find('input[autocomplete="cc-number"], input[name="cardNumber"], #cardNumber');
       if (!number) {
         await diag("card number field not found");
       } else {
-        await number.fill(card);
+        step = "fill-card-number";
+        await number.fill(card, { timeout: 15000 });
+        step = "fill-expiry-cvc";
         const exp = await find('input[autocomplete="cc-exp"], input[name="cardExpiry"], #cardExpiry', 10000);
         const cvc = await find('input[autocomplete="cc-csc"], input[name="cardCvc"], #cardCvc', 10000);
         if (exp) await exp.fill("12 / 34");
@@ -98,7 +104,8 @@ try {
         if (postcode) await postcode.fill("SW1A 1AA");
         const email = await find('input[autocomplete="email"], input[name="email"], #email', 3000);
         if (email && (await email.inputValue().catch(() => "")) === "" && process.env.EXPECT_EMAIL) await email.fill(process.env.EXPECT_EMAIL);
-        await page.locator('button[type="submit"]').first().click();
+        step = "submit";
+        await page.locator('button[type="submit"]').first().click({ timeout: 15000 });
         const result = await Promise.race([
           page.waitForURL((u) => u.hostname !== "checkout.stripe.com", { timeout: 90000 }).then(() => "complete"),
           page.getByText(/card was declined|payment failed|declined/i).first().waitFor({ state: "visible", timeout: 90000 }).then(() => "declined"),
@@ -109,7 +116,9 @@ try {
     }
   }
 } catch (e) {
-  out("blocked", String(e && e.name ? e.name : "error"));
+  const msg = String(e && e.message ? e.message : "").replace(/https?:\/\/\S+/g, "<url>").replace(/[\w.+-]+@[\w.-]+/g, "<email>").replace(/\s+/g, " ").slice(0, 220);
+  try { await browser.contexts()[0]?.pages()[0]?.screenshot({ path: "qa-stripe-checkout-diag.png", fullPage: true }); } catch (_) {}
+  out("blocked", `step=${step} ${String(e && e.name ? e.name : "error")}: ${msg}`);
 } finally {
   await browser.close();
 }
