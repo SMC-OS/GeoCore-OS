@@ -1,0 +1,51 @@
+"""SCRATCH probe (not committed): does a slow Stripe read made while holding the tenant lock starve the DB pool?"""
+import time, uuid
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock
+from sqlalchemy import create_engine, text
+from app.billing.service import BillingService
+from app.core.config import settings
+from app.database.database import SessionLocal
+from tests.test_billing import _sub_event, _canonical, owner_and_staff  # noqa: F401
+
+
+def test_slow_stripe_read_holds_connections(owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    small = create_engine(settings.database_url, pool_size=3, max_overflow=0, pool_timeout=2)
+    original_bind = SessionLocal.kw["bind"]
+    SessionLocal.configure(bind=small)
+    SLOW = 6.0
+    try:
+        events = [_sub_event("evt_pool_" + uuid.uuid4().hex, 900 + i, "active", tenant, "sub_pool") for i in range(3)]
+        def deliver(i):
+            stripe = MagicMock()
+            stripe.Webhook.construct_event.return_value = events[i]
+            def slow(_):
+                time.sleep(SLOW)  # a Stripe slowdown (real client waits up to 80 s per attempt, 2 retries)
+                return dict(_canonical(tenant, "sub_pool", "active"))
+            stripe.Subscription.retrieve.side_effect = slow
+            db = SessionLocal()
+            try:
+                BillingService(stripe).handle_webhook(db, b"{}", "sig")
+            finally:
+                db.close()
+        def unrelated():
+            t0 = time.time()
+            try:
+                with SessionLocal() as db:
+                    db.execute(text("select 1"))
+                return ("ok", round(time.time() - t0, 2))
+            except Exception as e:
+                return (type(e).__name__, round(time.time() - t0, 2))
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futs = [pool.submit(deliver, i) for i in range(3)]   # 3 events for ONE tenant, as Stripe sends bursts
+            time.sleep(1.0)
+            probe = pool.submit(unrelated).result()                # an unrelated request, another user entirely
+            for f in futs:
+                f.result(timeout=60)
+        print("UNRELATED REQUEST DURING SLOW STRIPE READ:", probe)
+        assert probe[0] != "ok"  # demonstrates starvation at pool_size=3 (scaled stand-in for the real 5+10)
+    finally:
+        SessionLocal.configure(bind=original_bind)
+        small.dispose()

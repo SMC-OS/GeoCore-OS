@@ -11,7 +11,7 @@
       "verified_in": [
         "ci"
       ],
-      "sha": "new release candidate (not yet selected)",
+      "sha": "2dda56b18f630d3014650bef959e34132ba8fc96",
       "evidence": [
         {
           "env": "ci",
@@ -28,11 +28,15 @@
         {
           "env": "local",
           "what": "Full backend suite on the working tree with the integrity fixes: 1831 passed, 3 skipped, 0 failed (12 Nov)"
+        },
+        {
+          "env": "ci",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): PR #74 CI run 43639548363 (five jobs) and integrated release-candidate CI run 43641363751 (backend, frontend, dependency audit, secret scan, E2E) all success on 2dda56b. Local independent backend run on the later base head a4ca4a1: 1880 passed / 31 skipped; the CI count of 1883 / 28 is explained exactly (3 PowerShell tests run on the GitHub runner; 28 root-only rehearsal tests skip in both). Commits after 2dda56b touch workflows only."
         }
       ],
-      "status": "UNKNOWN",
+      "status": "VERIFIED",
       "owner": "Release lead",
-      "remaining": "7644a22 is a green candidate, not the final SHA: acceptance on QA may require further fixes. Declare the final SHA and re-run CI on exactly it.",
+      "remaining": "None; keep 2dda56b as the immutable runtime candidate.",
       "blocks_initial_release": true
     },
     {
@@ -72,7 +76,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -97,6 +101,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -160,11 +168,15 @@
         {
           "env": "local",
           "what": "Synthetic manual verification exists for QA only and is not delivery evidence"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): email acceptance run 43529873478 succeeded. By script review: run-specific Gmail test alias; real signup verification e-mail accepted by the provider (provider message id recorded); API resend returned sent/already verified; invalid verification token refused. Inbox receipt and link click are NOT proven by the workflow (it cannot read the mailbox); the owner would have to confirm the messages arrived."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (mail provider and a monitored test mailbox)",
-      "remaining": "Confirm the mail provider is configured on QA, then send and receive a real verification message.",
+      "remaining": "Owner to confirm receipt in the test mailbox; verification-link click-through, expired and used-link cases NOT EXECUTED.",
       "blocks_initial_release": true
     },
     {
@@ -179,6 +191,10 @@
         {
           "env": "ci",
           "what": "Reset flow, expiry and reuse covered by backend and e2e tests"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Same run: password-reset e-mail accepted by the provider; invalid reset token refused (400). Forgot-password to inbox to successful reset, expired link and previously-used link NOT EXECUTED."
         }
       ],
       "status": "BLOCKED",
@@ -192,7 +208,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -213,6 +229,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -226,7 +246,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -243,6 +263,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -256,7 +280,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -273,6 +297,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -316,7 +344,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -329,6 +357,10 @@
         {
           "env": "isolated_qa",
           "what": "All 8 real browser tests passed on the deployed candidate (1.1 min, fresh contexts, same-origin session): g1-g4, d1-d7, d8, d9 and the reported unlinked-line symptom. GitHub Actions run 43172161693 (12 Nov), isolated QA project geocore-qa-20261110 / acceptance. API/web runtime tree identical to 7644a22; migration a5f6b7c8d9e0."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -342,7 +374,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -355,6 +387,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -368,7 +404,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -389,6 +425,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -411,11 +451,15 @@
         {
           "env": "ci",
           "what": "Webhook handling including the invoice.parent.subscription_details shape and atomic event recording"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): Stripe sandbox run 43662721622 succeeded. By script review it covered: eight test-mode prices matched to approved pricing; fresh no-card trial; closed admission refuses first checkout (403); a real sandbox subscription created through the Stripe API and its real webhook applied; trial ending, renewal invoice paid and status trialing to active via real events; an existing-subscriber hosted Checkout session created, inspected (test mode, correct price, bound to the workspace) and expired. NOT covered: completing a first hosted Checkout, 3-D Secure, declined card."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Provide a restricted test-mode key and a dedicated QA webhook endpoint secret; verify the eight Price objects in test mode; run the lifecycle.",
+      "remaining": "Hosted first Checkout completion is NOT EXECUTED (admission closed by design); needs an owner-approved synthetic path.",
       "blocks_initial_release": true
     },
     {
@@ -429,11 +473,15 @@
         {
           "env": "ci",
           "what": "Webhook unit tests for payment_failed and paid"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43662721622 contains no declined-payment or recovery step. Out-of-order and replay behaviour is covered only by backend unit tests (CI) including stale-event, same-second, invoice-before-linkage, retired-contract, rollback and concurrency cases."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Run with Stripe test clocks / failing test card.",
+      "remaining": "Declined payment, past_due and recovery with real Stripe test cards NOT EXECUTED on deployed QA.",
       "blocks_initial_release": true
     },
     {
@@ -447,11 +495,15 @@
         {
           "env": "ci",
           "what": "Backend tests"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43662721622, by script review: GeoCore /billing/cancel set cancel_at_period_end (also confirmed on the Stripe object) and /billing/resume cleared it; a customer-portal session URL on billing.stripe.com was created (not opened or exercised); plan changes starter to team to starter were made through the Stripe API and reflected by webhook; subscription deletion webhook applied as cancelled. Portal-driven plan change/cancel by a user NOT EXECUTED; no refund or proration scenario."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Run in test mode.",
+      "remaining": "Portal interaction, upgrade/downgrade through the customer UI, proration and refund NOT EXECUTED.",
       "blocks_initial_release": true
     },
     {
@@ -460,7 +512,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "ci",
@@ -477,6 +529,10 @@
         {
           "env": "isolated_qa",
           "what": "38 deployed checks: nosniff/frame/referrer/CSP on 200/401/404, HSTS on API and web, no x-powered-by, CORS allows only the QA web origin, cookie-session login from a hostile or missing Origin refused with no cookie, errors sanitised (no tracebacks/SQL/paths), unsigned and unsigned-header Stripe webhooks rejected, no credential-shaped strings in public documents or login HTML, anonymous refused on 11 protected routes, brute-force throttle returns 429. Defects found and fixed: x-powered-by exposed; social-preview og:image pointed at http://localhost:3000. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -612,7 +668,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "-",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "isolated_qa",
@@ -621,6 +677,10 @@
         {
           "env": "isolated_qa",
           "what": "Re-measured on the release-defaults build: 5/15/30 VUs, error rate 0, p95 0.33/0.36/0.44 s, p99 up to 3.0 s at 30 VUs. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -714,11 +774,15 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "isolated_qa",
           "what": "Staff refused (403) on quote, variation and purchase-order approval by default; cannot self-delegate; other workspace's owner cannot delegate; Owner delegates, delegated Staff approves with actor, amount £1,200.00 and time recorded, withdrawal enforced; 14 backend tests plus 88 deployed role checks. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -732,11 +796,15 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "isolated_qa",
           "what": "Approved quote revised to a draft revision 2 with identical totals; original status, total and approval timestamp unchanged; PATCH on the approved original still 409; history lists revisions 1..n with approved amounts; cross-tenant 404; revising a draft refused. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
@@ -750,11 +818,15 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "607a51b",
+      "sha": "2dda56b",
       "evidence": [
         {
           "env": "isolated_qa",
           "what": "Issuance refused (422, with the missing fields) until legal name, address, VAT status/number, payment details and terms are complete; non-registered workspaces cannot charge VAT; settings change after issue does not alter the issued invoice (text identical); due date calculated from terms; numbering, prefixes, discount and VAT arithmetic unchanged (73/73 lifecycle checks). GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
         }
       ],
       "status": "VERIFIED",
