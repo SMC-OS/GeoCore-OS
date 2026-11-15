@@ -1,0 +1,89 @@
+name: GeoCore writer-barrier rehearsal (disposable local PostgreSQL on the runner)
+
+# Runs tests/test_writer_barrier_rehearsal.py (28 tests) on a GitHub-hosted runner that satisfies its prerequisites: root, PostgreSQL
+# server binaries, setpriv and an interpreter UID 10001 can execute. Everything is local and disposable: a throwaway cluster on the
+# runner, no Railway token, no Stripe key, no QA or production access. Manual dispatch only.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/barrier-rehearsal]
+    paths: ['.github/workflows/geocore-writer-barrier-rehearsal.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Prove the code under test is the product candidate (runtime paths identical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          git cat-file -e "$EXPECTED_SHA^{commit}"
+          git diff --quiet "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}" && echo "runtime paths identical to $EXPECTED_SHA at $(git rev-parse HEAD)"
+      - name: PostgreSQL server binaries and an interpreter the application UID can run
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql util-linux
+          sudo systemctl stop postgresql || true
+          ls /usr/lib/postgresql/*/bin/initdb
+          which setpriv
+          sudo python3 -m venv /opt/rehearsal-venv
+          sudo /opt/rehearsal-venv/bin/pip install -q -r requirements.txt
+          sudo chmod -R a+rX /opt/rehearsal-venv
+          sudo -u nobody /opt/rehearsal-venv/bin/python -c "import fastapi, psycopg, alembic; print('interpreter usable by an unprivileged user')"
+      - name: Stage the exact candidate source under /opt and prove UID 10001 can traverse, import and use it
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No credentials of any kind may be present: this job has no Railway, Stripe, production or staging access.
+          if env | grep -E '^(RAILWAY|STRIPE|GEOCORE_QA|DATABASE_URL)' >/dev/null; then echo "REFUSED: credential-like variable present"; exit 1; fi
+          # The application drops to UID 10001 (as on Railway); /home/runner is not traversable by that user, so stage a copy.
+          sudo rm -rf /opt/rehearsal-repo
+          sudo cp -a "$PWD" /opt/rehearsal-repo
+          sudo chmod -R a+rX /opt/rehearsal-repo
+          # 1. The staged runtime source is byte-identical to the immutable candidate.
+          (cd /opt/rehearsal-repo && source scripts/qa/qa_railway_ops.sh && git diff --quiet "$EXPECTED_SHA" HEAD -- "${QA_RUNTIME_PATHS[@]}" \
+            && echo "staged runtime paths identical to $EXPECTED_SHA (HEAD $(git rev-parse HEAD))")
+          # 2. UID 10001 can traverse the source tree and import the recovery tools and the application package.
+          APP="sudo setpriv --reuid=10001 --regid=10001 --clear-groups"
+          $APP test -r /opt/rehearsal-repo/scripts/recovery/writer_barrier.py && echo "UID 10001 can read writer_barrier.py"
+          $APP env -i PATH="$PATH" /opt/rehearsal-venv/bin/python -c "import sys; sys.path.insert(0,'/opt/rehearsal-repo/scripts/recovery'); sys.path.insert(0,'/opt/rehearsal-repo'); import os; assert os.geteuid()==10001; import writer_barrier, content_fingerprint, app; print('UID', os.geteuid(), 'imports writer_barrier, content_fingerprint and the app package')"
+          # 3. The application process itself is launched as UID 10001 by test_00 (positive control); never as root.
+      - name: "Run all rehearsal tests as root (fail-closed - exactly 28 passed, 0 failed, 0 errors, 0 skipped)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          test -d /opt/rehearsal-repo   # staged and verified by the previous step
+          (cd /opt/rehearsal-repo && sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE=/opt/rehearsal-repo/rehearsal-evidence.json \
+            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider \
+            --junitxml=/opt/rehearsal-repo/rehearsal-junit.xml 2>&1) | tee rehearsal-output.txt
+          PYTEST_RC="${PIPESTATUS[0]}"   # captured IMMEDIATELY after the pipeline, before any other command
+          sudo cp /opt/rehearsal-repo/rehearsal-evidence.json /opt/rehearsal-repo/rehearsal-junit.xml . 2>/dev/null || true
+          python3 scripts/qa/verify_pytest_junit.py rehearsal-junit.xml --expect-passed 28
+          VERIFY_RC=$?
+          echo "pytest exit=$PYTEST_RC verifier exit=$VERIFY_RC"
+          [[ "$PYTEST_RC" -eq 0 && "$VERIFY_RC" -eq 0 ]]
+      - name: Retain redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-writer-barrier-rehearsal
+          path: |
+            rehearsal-output.txt
+            rehearsal-evidence.json
+            rehearsal-junit.xml
+          retention-days: 14
+          if-no-files-found: warn

@@ -95,7 +95,9 @@ def env():
     uploads = base / "uploads"
     uploads.mkdir(mode=0o750)
     os.chown(uploads, 10001, 10001)
-    (base / "private").mkdir(mode=0o700)  # barrier records: outside repo, root-only
+    (base / "private").mkdir(mode=0o700)  # barrier records: outside repo, root-only (administrator records are never handed to the app user)
+    (base / "appstate").mkdir(mode=0o700)  # upload-freeze state written by the app user, like `railway ssh` would; owned by UID 10001 only
+    os.chown(base / "appstate", 10001, 10001)
 
     def dsn(user, database):
         return f"postgresql://{user}:{pw[{'simo_admin': 'admin', 'simo_super': 'super', 'simo_limited': 'limited'}[user]]}@127.0.0.1:{PORT_PG}/{database}"
@@ -131,7 +133,7 @@ def env():
         "UPLOAD_DIR": str(uploads),
     }
     state = {"base": base, "dsn": dsn, "uploads": uploads, "system_id": system_id, "app_env": app_env,
-             "private": base / "private", "owner_password": "Rehearsal-" + secrets.token_urlsafe(12) + "1!"}
+             "private": base / "private", "appstate": base / "appstate", "owner_password": "Rehearsal-" + secrets.token_urlsafe(12) + "1!"}
     yield state
     subprocess.run(pg + [f"{bindir}/pg_ctl", "-D", str(base / "data"), "-m", "immediate", "stop"], capture_output=True)
     shutil.rmtree(base, ignore_errors=True)
@@ -155,7 +157,10 @@ def start_api(env, port=PORT_API, wait=True):
             except httpx.HTTPError:
                 time.sleep(0.2)
             if proc.poll() is not None:
-                raise RuntimeError("API exited during start-up")
+                import re as _re
+                tail = proc.log_path.read_text(errors="replace").splitlines()[-12:] if proc.log_path.exists() else []
+                clean = [_re.sub(r"(postgresql(\+psycopg)?://)[^@\s]+@", r"\1<redacted>@", _re.sub(r"(?i)(secret|password|token|key)=\S+", r"\1=<redacted>", ln))[:200] for ln in tail]
+                raise RuntimeError("API exited during start-up; sanitised log tail: " + " | ".join(clean))
         raise RuntimeError("API did not become healthy")
     return proc
 
@@ -347,11 +352,14 @@ def test_04_uploads_gap_then_freeze(env, api):
                                 files={"file": ("late.pdf", io.BytesIO(pdf(9)), "application/pdf")}, headers=S["token"])
     r = upload()
     orphans = sorted(set(env["uploads"].iterdir()) - {env["uploads"] / e["relative_path"] for e in S["m_pre"]["entries"]})
-    record("FINDING: with the DB barrier alone, a rejected upload still leaves an orphan FILE (uploads layer is mandatory)",
-           r.status_code >= 400 and len(orphans) == 1, status=r.status_code, orphan_files=len(orphans))
+    # The original rehearsal (pre QA-UPLOAD-ORPHAN fix) recorded that a rejected upload left ONE orphan file, which made the uploads
+    # layer mandatory. The candidate now removes the file when the database write is rejected, so the orphan must no longer appear.
+    # The uploads freeze is kept (defence in depth, and the capture method still requires frozen uploads); only the stale expectation changes.
+    record("RESOLVED FINDING: with the DB barrier alone, a rejected upload is refused AND leaves no orphan file (QA-UPLOAD-ORPHAN fix)",
+           r.status_code >= 400 and len(orphans) == 0, status=r.status_code, orphan_files=len(orphans))
     for o in orphans:
         o.unlink()  # rehearsal cleanup, as the owning user
-    state = env["private"] / "uploads-state.json"
+    state = env["appstate"] / "uploads-state.json"
     root = subprocess.run([PYTHON, str(RECOVERY / "writer_barrier.py"), "uploads-probe", "--dir", str(env["uploads"])],
                           capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
     record("negative: uploads probe refuses to run as root (root would bypass permissions)", root.returncode == wb.EXIT_REFUSED)
@@ -359,7 +367,6 @@ def test_04_uploads_gap_then_freeze(env, api):
     record("control: before freezing, the uploads probe correctly FAILS (writes still possible)",
            pre_probe.returncode == wb.EXIT_PROBE_FAILED, exit=pre_probe.returncode)
     S["uploads_state"] = state
-    os.chown(env["private"], 10001, 10001)  # state is written by the app user, like `railway ssh` would
     freeze = barrier_cli(env, "uploads-freeze", "--dir", str(env["uploads"]), "--state", str(state), as_app=True)
     assert freeze.returncode == 0, freeze.stderr
     probe = barrier_cli(env, "uploads-probe", "--dir", str(env["uploads"]), as_app=True)
@@ -550,7 +557,7 @@ def test_09_uploads_emergency_thaw(env):
         "try:\n    (d / 'c.bin').write_bytes(b'z'); frozen_write = True\nexcept PermissionError:\n    frozen_write = False\n"
         "wb.uploads_thaw(d, None, emergency=True)\n(d / 'c.bin').write_bytes(b'z')\n"
         "print(json.dumps({'write_while_frozen': frozen_write, 'write_after_emergency_thaw': True}))\n"
-        % (str(RECOVERY), str(target), str(env["private"] / f"st-{secrets.token_hex(4)}.json"))
+        % (str(RECOVERY), str(target), str(env["appstate"] / f"st-{secrets.token_hex(4)}.json"))
     )
     out = subprocess.run(APP + [PYTHON, "-c", script], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
     assert out.returncode == 0, out.stderr
@@ -628,7 +635,7 @@ def test_12_stop_when_uploads_are_not_frozen(env, monkeypatch):
 
 
 def test_13_freeze_uploads_for_capture(env):
-    A1["state"] = env["private"] / "a1-uploads-state.json"
+    A1["state"] = env["appstate"] / "a1-uploads-state.json"
     done = barrier_cli(env, "uploads-freeze", "--dir", str(env["uploads"]), "--state", str(A1["state"]), as_app=True)
     assert done.returncode == 0, done.stderr
 
@@ -799,7 +806,7 @@ def test_19_container_side_commands_work_when_piped_on_stdin(env):
     os.chown(target, 10001, 10001)
     (target / "f.bin").write_bytes(b"x")
     os.chown(target / "f.bin", 10001, 10001)
-    state = env["private"] / f"piped-{secrets.token_hex(4)}.json"
+    state = env["appstate"] / f"piped-{secrets.token_hex(4)}.json"
     barrier_src = (RECOVERY / "writer_barrier.py").read_bytes()
     finger_src = (RECOVERY / "content_fingerprint.py").read_bytes()
 
