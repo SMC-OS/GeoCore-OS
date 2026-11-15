@@ -26,8 +26,18 @@ jobs:
           QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
           QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
         run: python3 scripts/qa/qa_stripe_acceptance.py --preflight
-      - name: Install Railway CLI
-        run: npm install --global @railway/cli@4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install Railway CLI and the browser used for Stripe-hosted pages (TEST MODE pages only)
+        run: |
+          npm install --global @railway/cli@4
+          pnpm install --frozen-lockfile
+          pnpm --filter web exec playwright install --with-deps chromium
       - name: Verify isolated QA and unchanged runtime before any mutation
         env:
           RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
@@ -125,12 +135,41 @@ jobs:
           {
             echo "STAGING_OWNER_EMAIL=stripe-qa-$RUN@acceptance.invalid"
             echo "STAGING_OWNER_PASSWORD=$PW_A"
+            echo "STAGING_OWNER_B_EMAIL=stripe-qa-other-$RUN@acceptance.invalid"
+            echo "STAGING_OWNER_B_PASSWORD=$PW_B"
           } >> "$GITHUB_ENV"
       - name: Run real sandbox subscription and webhook lifecycle
         env:
           QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
           QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
         run: python3 scripts/qa/qa_stripe_acceptance.py
+      - name: Run hosted Checkout, failed-payment recovery, portal and webhook-resilience scenarios (extended)
+        if: ${{ !cancelled() && env.BILLING_SETUP_STARTED == '1' }}
+        env:
+          QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
+          QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
+        run: python3 scripts/qa/qa_stripe_acceptance_ext.py
+      - name: Confirm permanent and transient billing-failure markers reached the API logs
+        if: ${{ !cancelled() && env.BILLING_SETUP_STARTED == '1' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          [[ -f qa-stripe-ext-events.json ]] || { echo "BLOCKED: no extended events file"; exit 1; }
+          read -r ID _ _ < <(latest_deployment)
+          LOGS="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 5000 2>&1 | tr -d '\r')"
+          rc=0
+          for pair in permanent:billing_webhook_permanent_failure transient:billing_webhook_transient_failure; do
+            kind="${pair%%:*}"; marker="${pair#*:}"
+            for eid in $(jq -r --arg k "$kind" '.[] | select(.kind==$k) | .event_id' qa-stripe-ext-events.json); do
+              if grep -aq "$marker event_id=$eid" <<<"$LOGS"; then echo "PASS $kind failure logged ($marker) for synthetic event $eid" | tee -a qa-stripe-identity.txt
+              else echo "FAIL $kind marker $marker not found for $eid" | tee -a qa-stripe-identity.txt; rc=1; fi
+            done
+          done
+          ! grep -aEq "sk_(test|live)_|rk_(test|live)_|whsec_" <<<"$LOGS" || { echo "FAIL: Stripe credential pattern in API logs"; rc=1; }
+          exit "$rc"
       - name: Restore QA configuration (even on failure)
         if: always()
         env:
@@ -180,6 +219,7 @@ jobs:
           name: geocore-sandbox-stripe-acceptance
           path: |
             qa-stripe-results.json
+            qa-stripe-ext-results.json
             qa-stripe-identity.txt
           retention-days: 14
           if-no-files-found: warn
