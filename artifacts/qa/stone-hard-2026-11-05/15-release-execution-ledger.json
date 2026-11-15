@@ -32,6 +32,10 @@
         {
           "env": "ci",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): PR #74 CI run 43639548363 (five jobs) and integrated release-candidate CI run 43641363751 (backend, frontend, dependency audit, secret scan, E2E) all success on 2dda56b. Local independent backend run on the later base head a4ca4a1: 1880 passed / 31 skipped; the CI count of 1883 / 28 is explained exactly (3 PowerShell tests run on the GitHub runner; 28 root-only rehearsal tests skip in both). Commits after 2dda56b touch workflows only."
+        },
+        {
+          "env": "local",
+          "what": "15 Nov: PR #75 local results: backend 1894 passed / 31 skipped on fresh PostgreSQL (28 writer-barrier rehearsal tests not executed; 3 PowerShell tests unavailable locally), frontend 424 passed, pip-audit clean, secret scan 0, single Alembic head c7d8e9f0a1b2. CI for PR #75 not yet complete when written."
         }
       ],
       "status": "VERIFIED",
@@ -63,6 +67,10 @@
         {
           "env": "isolated_qa",
           "what": "Deploy logs show 'a5f6b7c8d9e0 (head)' from the start-command migration gate; /ready 200 (12 Nov). Pre-deploy output is not observable on Railway with this token, so the start-command line is the evidence."
+        },
+        {
+          "env": "local",
+          "what": "15 Nov: explicit deployed-database head assertion implemented on branch qa/acceptance-migration-assertion (47614c5) and tested locally (PASS, mismatch, empty expectation); not yet executed on deployed QA."
         }
       ],
       "status": "UNKNOWN",
@@ -455,11 +463,15 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): Stripe sandbox run 43662721622 succeeded. By script review it covered: eight test-mode prices matched to approved pricing; fresh no-card trial; closed admission refuses first checkout (403); a real sandbox subscription created through the Stripe API and its real webhook applied; trial ending, renewal invoice paid and status trialing to active via real events; an existing-subscriber hosted Checkout session created, inspected (test mode, correct price, bound to the workspace) and expired. NOT covered: completing a first hosted Checkout, 3-D Secure, declined card."
+        },
+        {
+          "env": "local",
+          "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Hosted first Checkout completion is NOT EXECUTED (admission closed by design); needs an owner-approved synthetic path.",
+      "remaining": "Hosted first Checkout completion is NOT EXECUTED (admission closed by design); needs an owner-approved synthetic path. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
       "blocks_initial_release": true
     },
     {
@@ -477,11 +489,15 @@
         {
           "env": "isolated_qa",
           "what": "Run 43662721622 contains no declined-payment or recovery step. Out-of-order and replay behaviour is covered only by backend unit tests (CI) including stale-event, same-second, invoice-before-linkage, retired-contract, rollback and concurrency cases."
+        },
+        {
+          "env": "local",
+          "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Declined payment, past_due and recovery with real Stripe test cards NOT EXECUTED on deployed QA.",
+      "remaining": "Declined payment, past_due and recovery with real Stripe test cards NOT EXECUTED on deployed QA. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
       "blocks_initial_release": true
     },
     {
@@ -499,11 +515,15 @@
         {
           "env": "isolated_qa",
           "what": "Run 43662721622, by script review: GeoCore /billing/cancel set cancel_at_period_end (also confirmed on the Stripe object) and /billing/resume cleared it; a customer-portal session URL on billing.stripe.com was created (not opened or exercised); plan changes starter to team to starter were made through the Stripe API and reflected by webhook; subscription deletion webhook applied as cancelled. Portal-driven plan change/cancel by a user NOT EXECUTED; no refund or proration scenario."
+        },
+        {
+          "env": "local",
+          "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Portal interaction, upgrade/downgrade through the customer UI, proration and refund NOT EXECUTED.",
+      "remaining": "Portal interaction, upgrade/downgrade through the customer UI, proration and refund NOT EXECUTED. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
       "blocks_initial_release": true
     },
     {
