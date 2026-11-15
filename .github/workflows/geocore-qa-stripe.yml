@@ -17,7 +17,7 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
-      EXPECTED_SHA: 86c4911f3d22acf1a2f5826f79ac0dbfa8e3aa3b
+      EXPECTED_SHA: 2dda56b18f630d3014650bef959e34132ba8fc96
     steps:
       - uses: actions/checkout@v4
         with:
