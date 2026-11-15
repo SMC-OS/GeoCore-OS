@@ -6,9 +6,6 @@ name: GeoCore writer-barrier rehearsal (disposable local PostgreSQL on the runne
 
 on:
   workflow_dispatch:
-  push:
-    branches: [qa/barrier-rehearsal]
-    paths: ['.github/workflows/geocore-writer-barrier-rehearsal.yml']
 
 permissions:
   contents: read
