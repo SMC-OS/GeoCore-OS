@@ -1,8 +1,8 @@
 {
   "relation_to_existing_ledger": "This ledger is the gate-level release view. The detailed 110-cell / 18-journey / 12-gate Stone-Hard ledger (04-ledger-reconciled.json, 01-requirements-matrix.csv) is unchanged and not reset: its unknown cells stay unknown until each has evidence in the environment it names. Nothing here closes any of them.",
   "title": "GeoCore release execution ledger",
-  "as_of": "2026-11-12",
-  "verdict": "HARD NO-GO",
+  "as_of": "2026-11-15 (final hosted recovery closure)",
+  "verdict": "HARD NO-GO (HOLD). Product candidate f503041 has strong deployed isolated-QA evidence; mandatory gates remain open: hosted Checkout (both outcomes) and first-ever customer Checkout, real email click-through, replacement-infrastructure recovery, shared-staging recovery point, monitoring/alert delivery, support, legal/commercial adoption, catalogue import and owner decisions.",
   "rules": "Evidence is tagged by environment and never counted for another. A gate is VERIFIED only in the environments listed in verified_in.",
   "gates": [
     {
@@ -11,7 +11,7 @@
       "verified_in": [
         "ci"
       ],
-      "sha": "2dda56b18f630d3014650bef959e34132ba8fc96",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -36,11 +36,15 @@
         {
           "env": "local",
           "what": "15 Nov: PR #75 local results: backend 1894 passed / 31 skipped on fresh PostgreSQL (28 writer-barrier rehearsal tests not executed; 3 PowerShell tests unavailable locally), frontend 424 passed, pip-audit clean, secret scan 0, single Alembic head c7d8e9f0a1b2. CI for PR #75 not yet complete when written."
+        },
+        {
+          "env": "ci",
+          "what": "Product candidate f503041822923bd4b07a0bebaa6748ba71873740 (PR #75 merge): push run 43725241729 and PR run 43725247598 success (backend, frontend, e2e, dependency-audit, secret-scan); PR #75 head b351dca runs 43724361006 and 43724356433 success. QA tooling merge 2b2f514 (PR #76) CI success on head f94b834."
         }
       ],
       "status": "VERIFIED",
       "owner": "Release lead",
-      "remaining": "None; keep 2dda56b as the immutable runtime candidate.",
+      "remaining": "None for the product candidate. Recovery tooling PR #77 and any later tooling need their own green CI; tooling changes do not change the product candidate.",
       "blocks_initial_release": true
     },
     {
@@ -50,7 +54,7 @@
         "isolated_qa",
         "production"
       ],
-      "sha": "head a5f6b7c8d9e0",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "local",
@@ -71,6 +75,10 @@
         {
           "env": "local",
           "what": "15 Nov: explicit deployed-database head assertion implemented on branch qa/acceptance-migration-assertion (47614c5) and tested locally (PASS, mismatch, empty expectation); not yet executed on deployed QA."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Deploy workflow 43727031737: migrate gate printed 'c7d8e9f0a1b2 (head)', zero tracebacks. In-container read-only alembic_version query QA_MIGRATION|c7d8e9f0a1b2|PASS in acceptance 43730458415 and every Stripe provisioning run; fails the deployment on missing/empty/mismatch."
         }
       ],
       "status": "UNKNOWN",
@@ -84,7 +92,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -113,6 +121,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415 on f503041 (both services exact): 88/88 roles, tenant isolation, editing and workflow checks; 8/8 stone-gate browser journeys; restored-application cross-tenant retrieval 404 in both directions (drill 43734792050)."
         }
       ],
       "status": "VERIFIED",
@@ -126,7 +138,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "working tree",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "local",
@@ -139,6 +151,10 @@
         {
           "env": "isolated_qa",
           "what": "Role matrix regenerated and reviewed: only the three approval routes changed (Staff now forbidden) plus the new delegation route (Owner only) and revision routes (both roles). 88 deployed checks pass."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: Staff refused on 32 owner-only routes; delegated approval records actor/amount/time; withdrawal enforced; 88/88."
         }
       ],
       "status": "UNKNOWN",
@@ -216,7 +232,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -241,6 +257,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: 73/73 lifecycle checks and 88/88 role/editing/task checks on f503041."
         }
       ],
       "status": "VERIFIED",
@@ -254,7 +274,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -262,7 +282,7 @@
         },
         {
           "env": "isolated_qa",
-          "what": "Quote created with two lines, £50 discount and 20% VAT: net £750.00, VAT £150.00, total £900.00, stable on re-read, approved. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+          "what": "Quote created with two lines, \u00a350 discount and 20% VAT: net \u00a3750.00, VAT \u00a3150.00, total \u00a3900.00, stable on re-read, approved. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         },
         {
           "env": "isolated_qa",
@@ -275,6 +295,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: money (net after discount, VAT, total), repeated save stable, amendment saves, approved quote cannot be silently amended, revisions preserve the original (73/73, 88/88)."
         }
       ],
       "status": "VERIFIED",
@@ -288,7 +312,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -309,6 +333,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: Invoice-000001 per workspace, custom prefix/sequence QAInvoice-000041, issued invoice frozen against later supplier/prefix changes, concurrent downloads allocate one reference."
         }
       ],
       "status": "VERIFIED",
@@ -322,11 +350,11 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "working tree",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "local",
-          "what": "Generated and inspected three invoices (A4): totals recomputed independently and equal to the penny (discount £233.75 -> £2,524.50; zero-rated £333.33; VAT rounding £999.99 -> £1,199.99); accents, £, em dash and curly quotes render in an embedded font; long text wraps clear of the amount column; repeat download has identical text; cosmetic: a stray ' ,' after a description ending in a full stop"
+          "what": "Generated and inspected three invoices (A4): totals recomputed independently and equal to the penny (discount \u00a3233.75 -> \u00a32,524.50; zero-rated \u00a3333.33; VAT rounding \u00a3999.99 -> \u00a31,199.99); accents, \u00a3, em dash and curly quotes render in an embedded font; long text wraps clear of the amount column; repeat download has identical text; cosmetic: a stray ' ,' after a description ending in a full stop"
         },
         {
           "env": "isolated_qa",
@@ -334,11 +362,15 @@
         },
         {
           "env": "isolated_qa",
-          "what": "Deployed invoice PDF text extracted: reference and total correct, stable. Visual inspection (rendered at 80 dpi from the identical generator): clean layout, £ renders, fonts embedded (Bitstream Vera; footer uses unembedded Helvetica), no overlap, arithmetic correct. DEFECT: the invoice shows no supplier name/address/company or VAT number, no due date, no payment details or terms."
+          "what": "Deployed invoice PDF text extracted: reference and total correct, stable. Visual inspection (rendered at 80 dpi from the identical generator): clean layout, \u00a3 renders, fonts embedded (Bitstream Vera; footer uses unembedded Helvetica), no overlap, arithmetic correct. DEFECT: the invoice shows no supplier name/address/company or VAT number, no due date, no payment details or terms."
         },
         {
           "env": "isolated_qa",
-          "what": "Rendered inspection of generated PDFs (80-90 dpi, 13 Nov): long registered name wraps cleanly, accents, £/€/½, VAT and payment details, due date, totals correct, no overlap. DEFECT FOUND AND FIXED: Polish/Czech/Hungarian characters (ż, ő, ř) rendered as empty boxes with ReportLab's Vera; DejaVu Sans is now vendored (regression test added); deployed text extraction of invoices passes on the exact SHA. The deployed PDF bytes could not be downloaded here, so the visual check is on the identical generator output."
+          "what": "Rendered inspection of generated PDFs (80-90 dpi, 13 Nov): long registered name wraps cleanly, accents, \u00a3/\u20ac/\u00bd, VAT and payment details, due date, totals correct, no overlap. DEFECT FOUND AND FIXED: Polish/Czech/Hungarian characters (\u017c, \u0151, \u0159) rendered as empty boxes with ReportLab's Vera; DejaVu Sans is now vendored (regression test added); deployed text extraction of invoices passes on the exact SHA. The deployed PDF bytes could not be downloaded here, so the visual check is on the identical generator output."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: invoice PDF text includes the correct reference and total and is stable on re-download; supplier, payment details and due date present."
         }
       ],
       "status": "VERIFIED",
@@ -352,7 +384,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -369,6 +401,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: eight hosted stone-gate browser tests (delivery, partial, short order, over-receipt refusal, retried delivery once, cancel PO, cross-workspace refusal) 8/8."
         }
       ],
       "status": "VERIFIED",
@@ -382,7 +418,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -399,6 +435,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: stone job through every gate enquiry>measure_site_visit>quote>approved>deposit>material_ordered_reserved>template>fabrication>qc>installation>snagging>complete 10/10."
         }
       ],
       "status": "VERIFIED",
@@ -412,7 +452,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -437,6 +477,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: portal scoping, revocation, byte-identical document download, spoofed type served safely; drill 43734792050: restored-application authenticated retrieval for two tenants with bytes equal to the restored manifest SHA-256."
         }
       ],
       "status": "VERIFIED",
@@ -450,11 +494,11 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "local",
-          "what": "Plan catalogue matches the approved pricing exactly: Starter £29/£290, Team £59/£590, Pro £99/£990, Business £199/£1,990, Enterprise no self-service checkout; 14-day Pro trial without a card (code against sprint 039/041 and API_SPEC)"
+          "what": "Plan catalogue matches the approved pricing exactly: Starter \u00a329/\u00a3290, Team \u00a359/\u00a3590, Pro \u00a399/\u00a3990, Business \u00a3199/\u00a31,990, Enterprise no self-service checkout; 14-day Pro trial without a card (code against sprint 039/041 and API_SPEC)"
         },
         {
           "env": "ci",
@@ -467,11 +511,19 @@
         {
           "env": "local",
           "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43729589715 (42 PASS, 0 FAIL, 2 BLOCKED, 2 NOTE) on f503041: existing-contract workspace linked to a genuine sandbox subscription by actual Stripe webhooks; closed admission refuses Checkout for a never-subscribed workspace (HTTP 403, policy; admission not opened)."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43733515870: hosted Checkout page reached, test card entered, pay clicked; Stripe presented a captcha (captcha=true, 16 frames, no redirect/decline in 90 s) for BOTH the declined and the successful card. External anti-automation control; not bypassed. Owner-assisted procedure: doc 21 B7. First-ever customer Checkout needs the approved disposable admission-enabled environment (doc 21 B8)."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Hosted first Checkout completion is NOT EXECUTED (admission closed by design); needs an owner-approved synthetic path. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
+      "remaining": "Hosted Checkout successful card and declined card: BLOCKED by an external captcha; owner-assisted procedure (doc 21 B7). First-ever customer Checkout: BLOCKED until the disposable admission-enabled environment is approved and used (doc 21 B8). Testing an existing subscriber does not close this gate.",
       "blocks_initial_release": true
     },
     {
@@ -480,7 +532,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -493,11 +545,15 @@
         {
           "env": "local",
           "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43729589715 (actual Stripe sandbox API and actual Stripe-originated webhooks): renewal declined with HTTP 402 card_declined; workspace moved to past_due; past_due restricted from workspace routes (402) with billing reachable; payment recovery with a good test card; active status and workspace access restored (200)."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Declined payment, past_due and recovery with real Stripe test cards NOT EXECUTED on deployed QA. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
+      "remaining": "Failed renewal, past_due restriction and recovery are VERIFIED on the deployed candidate. Still BLOCKED: hosted declined-card Checkout (external captcha, doc 21 B7); real Stripe timeout/429/5xx recovery NOT EXECUTED against hosted Stripe (local/CI only); billing-failure alert delivery to a monitored owner NOT EXECUTED.",
       "blocks_initial_release": true
     },
     {
@@ -506,7 +562,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -519,11 +575,15 @@
         {
           "env": "local",
           "what": "15 Nov: SUPERSEDING FINDING - real Stripe events were not reaching the PR #74 reconciliation (stripe.Event has no .get, event time was None, legacy handler ran). Earlier sandbox acceptance therefore does not prove reconciliation, ordering or locking. Fix and measurements in PR #75 (draft, CI pending, review pending); candidate 2dda56b is not the billing release candidate."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43729589715: cancel at period end, resume, Team<->Starter plan changes and cancellation webhook applied from actual Stripe events; secondary owner cannot obtain the primary customer's portal or cancel its subscription; hosted billing portal page loaded with billing content (customer email not shown on the page, so scoping on the page itself is not verified)."
         }
       ],
       "status": "BLOCKED",
       "owner": "Owner (Stripe test-mode access)",
-      "remaining": "Portal interaction, upgrade/downgrade through the customer UI, proration and refund NOT EXECUTED. | Re-run the Stripe sandbox acceptance, including hosted first Checkout, declined payment and recovery, signed replay/out-of-order and billing tenant isolation, on the deployed corrected candidate.",
+      "remaining": "Cancellation, resumption and plan changes VERIFIED. Portal page opens (VERIFIED); interactive portal actions (upgrade/downgrade through the portal UI, proration, refund) and customer-scoped content on the portal page NOT EXECUTED; owner-assisted check in doc 21 B7.",
       "blocks_initial_release": true
     },
     {
@@ -532,7 +592,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "ci",
@@ -553,6 +613,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: hosted security 38/38 (headers, CORS, error sanitisation, webhook, throttle, secrets). Stripe locally-signed resilience in run 43729589715 (duplicate, stale, out-of-order, concurrent, cross-tenant rejection, saturation 58 x 200 / 482 x 503 with Retry-After) - signed with the sandbox secret, NOT Stripe-originated."
         }
       ],
       "status": "VERIFIED",
@@ -619,6 +683,10 @@
         {
           "env": "isolated_qa",
           "what": "Two synthetic owners provisioned through the API start command (no SSH: a project token cannot register keys), HTTP login 200 for both, original start command and temporary variables restored and a stable SUCCESS deployment confirmed. GitHub Actions run 43172161693 (12 Nov), isolated QA project geocore-qa-20261110 / acceptance"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Pinned deploy workflow 43727031737 (API then web, exact SHA, migration head, no traceback); exact-SHA restoration helper proven live in run 43734792050 (RESTORED_PINNED api=fbe5df50.../f503041 web=d27b912c.../f503041 admission=closed start_predeploy=baseline rc=0) and by 5 stubbed tests. The earlier container-task restorations ended on the branch-head build 2b2f514 (runtime-identical, not the pinned candidate) - corrected in PR #77."
         }
       ],
       "status": "VERIFIED",
@@ -661,11 +729,15 @@
         {
           "env": "isolated_qa",
           "what": "ISOLATED QA drill passed (container task run 43183225488): PG18 client matching server 18.6, pg_dump custom (0.2 s, 306 KB), matched uploads bundle (10 files), restore into a disposable database (2.0 s total with uploads), 53 tables / 3,088 rows / sequences / alembic a5f6b7c8d9e0 identical, all 10 upload files byte-identical, per-tenant counts identical across 17 tenants, database dropped, scratch removed. Limits: tiny data, same server, no PITR/WAL."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Hardened matched recovery drill 43734792050 on f503041 (logical restoration on the SAME PostgreSQL 18 server; task_rc 0, restore_rc 0): T0==T1 mandatory PASS; source and restored migration exactly c7d8e9f0a1b2; database fingerprints, sequences and row total equal (13,086 rows, 53 tables); 34 uploads byte-identical (SHA-256, size, path); per-tenant counts identical across 59 tenants; every document row has its private file; a separate restored application served two tenants their own documents with bytes equal to the restored manifest, 404 across tenants, anonymous refused, list scoped; disposable database dropped. Dump 735,114 bytes in 0.2 s, restore 1.0 s, total 7.2 s. Recovery point 2026-11-15T16:20:00Z. First drill 43732786394 (without the assertions) also passed. Hardened run 43733902492 failed closed on my owner-role query defect."
         }
       ],
       "status": "BLOCKED",
       "owner": "Operator",
-      "remaining": "Repeat on shared staging with the real A1 bundle in a new approved window; production later. RTO excludes provisioning a new Postgres service.",
+      "remaining": "Logical same-server restoration is VERIFIED on isolated QA. NOT EXECUTED: recovery onto replacement database/storage infrastructure (doc 21 B9, approval for paid resources), PITR/WAL, and the shared-staging run in an approved window with the real A1 bundle.",
       "blocks_initial_release": true
     },
     {
@@ -688,7 +760,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "isolated_qa",
@@ -701,6 +773,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Run 43730458415 on f503041: 5 VUs 289 requests 0 errors p95 0.170 s p99 0.197 s; 15 VUs 832 requests 0 errors p95 0.321 s p99 1.271 s; 30 VUs 1,566 requests 0 errors p95 0.333 s p99 3.825 s, 39.1 req/s; total 2,687 requests, 0 errors. Bounded isolated-QA only; not production-scale. Webhook burst: 540 signed events in ~12 s, 58 x 200, 482 x 503 with Retry-After, API health and authenticated reads stayed responsive (13 samples, 0 errors, max 0.51 s)."
         }
       ],
       "status": "VERIFIED",
@@ -794,15 +870,19 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "isolated_qa",
-          "what": "Staff refused (403) on quote, variation and purchase-order approval by default; cannot self-delegate; other workspace's owner cannot delegate; Owner delegates, delegated Staff approves with actor, amount £1,200.00 and time recorded, withdrawal enforced; 14 backend tests plus 88 deployed role checks. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+          "what": "Staff refused (403) on quote, variation and purchase-order approval by default; cannot self-delegate; other workspace's owner cannot delegate; Owner delegates, delegated Staff approves with actor, amount \u00a31,200.00 and time recorded, withdrawal enforced; 14 backend tests plus 88 deployed role checks. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         },
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: Staff cannot self-grant (403), another workspace cannot delegate, delegated approval recorded, withdrawal enforced."
         }
       ],
       "status": "VERIFIED",
@@ -816,7 +896,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "isolated_qa",
@@ -825,6 +905,10 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: Staff derives a revision from an approved quote, original preserved, revision history lists both."
         }
       ],
       "status": "VERIFIED",
@@ -838,7 +922,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "2dda56b",
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
         {
           "env": "isolated_qa",
@@ -847,11 +931,67 @@
         {
           "env": "isolated_qa",
           "what": "Owner-attributed: independently confirmed by the owner's separate GitHub connection (not retrieved by this session, whose GitHub API is blocked): authenticated isolated-QA acceptance run 43654863264 succeeded on the integrated candidate (deployed revision verified; eight browser tests; lifecycle/invoice/quote-amendment/PDF/portal; Owner/Staff and tenant isolation; stone workflow; deployed security; capacity to 30 virtual users; configuration restored). Individual check counts were not read by this session."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Acceptance 43730458415: invoice refused (422) until supplier details complete; frozen snapshot; B settings unchanged by A."
         }
       ],
       "status": "VERIFIED",
       "owner": "Owner (data entry)",
       "remaining": "Owner must enter the real supplier details per workspace; nothing is prefilled or invented.",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "WRITER-BARRIER-REHEARSAL",
+      "purpose": "The two-layer writer barrier, capture, restore proof, emergency release and operator tooling pass all 28 rehearsal tests with none skipped",
+      "verified_in": [
+        "ci"
+      ],
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
+      "evidence": [
+        {
+          "env": "ci",
+          "what": "Disposable GitHub-hosted runner, local PostgreSQL 16, application as UID 10001, no Railway/Stripe credentials: run 43732293051 (head 6a5a3b3) 28 passed, 0 failed, 0 errors, 0 skipped in 136.69 s, pytest exit 0, fail-closed verifier exit 0."
+        },
+        {
+          "env": "ci",
+          "what": "Run 43732968698 (head 77432c2): 28 passed in 136.82 s; staged runtime identical to f503041; no credential-like variable; UID 10001 reads and imports the tools; verifier cases=28 passed=28 failed=0 errors=0 skipped=0."
+        },
+        {
+          "env": "ci",
+          "what": "Progression: 43730903412 6 passed/12 failed/10 errors (UID 10001 could not traverse the checkout), 43731260548 12/16, 43731908173 27/1 (real defect: Python 3.12 piped __file__ is '<stdin>' made the repository root '/'; fixed in writer_barrier.py)."
+        }
+      ],
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "Rehearsal scope only. It is not a staging or production barrier run and not hosted recovery. PR #77 must be reviewed and merged with green CI.",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "REPLACEMENT-INFRA-RECOVERY",
+      "purpose": "Restore matched database and private uploads onto replacement infrastructure without the original server or storage location",
+      "verified_in": [
+        "isolated_qa"
+      ],
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
+      "evidence": [],
+      "status": "BLOCKED",
+      "owner": "Owner (approval for paid resources)",
+      "remaining": "NOT EXECUTED. Proposal and measurements in doc 21 B9; needs approval to provision a disposable Postgres service and volume.",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "FIRST-CUSTOMER-ACCEPTANCE",
+      "purpose": "Literal first-ever customer journey on an admission-enabled disposable environment: registration, verification email click-through, workspace, first hosted Checkout (success and decline), entitlement",
+      "verified_in": [
+        "isolated_qa"
+      ],
+      "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
+      "evidence": [],
+      "status": "BLOCKED",
+      "owner": "Owner (approval) and agent",
+      "remaining": "NOT EXECUTED. Needs written approval of the disposable environment (doc 21 B8); admission must not be opened in the existing acceptance environment.",
       "blocks_initial_release": true
     }
   ]

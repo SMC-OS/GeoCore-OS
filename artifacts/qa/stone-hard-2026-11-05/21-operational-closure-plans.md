@@ -79,3 +79,55 @@ Each line needs the owner's own act; **no approval, signature or acceptance is r
 
 ## B6. Supplier catalogue-import mechanism
 Search of `scripts/`, `app/` and `docs/` (local, 15 Nov) found catalogue READ/pricing code (`app/catalogue`, quote and procurement use) but **no supported import tool or documented import procedure**. The production catalogue-import gate therefore has no mechanism to verify. Proposed (separately reviewed, not implemented): an idempotent, dry-run-first importer reading a versioned CSV/JSON source, writing inside one transaction, producing a count/hash reconciliation report, runnable first against the scratch restore (B1 step 6) and only then production in an approved window. Until the owner confirms how the production catalogue is populated today, the gate stays UNKNOWN.
+
+## B7. Owner-assisted hosted Checkout procedure (Stripe TEST MODE only)
+Why: automated Stripe-hosted Checkout runs reach the payment form and click pay, then Stripe presents a captcha to the headless datacenter browser (run 43733515870: `captcha=true`, no redirect or decline in 90 s). That is an external anti-automation control; it is not bypassed. A human completes the page in a normal browser.
+Preconditions: isolated QA on `f503041` (check `GET /ready`), admission closed, Stripe sandbox keys configured by the Stripe workflow (never live), a synthetic existing-contract workspace (see B8 for the never-subscribed case). No real card, no real customer.
+1. The agent provisions two synthetic owners, links workspace P to a sandbox customer, cancels its subscription and PAUSES before restoration (to be built as a `scope=owner-assisted` mode: it prints only the synthetic owner email and a one-time password through the masked channel to the owner, never a Checkout URL in logs).
+2. Owner logs in as P in a normal browser, opens Billing → choose plan → Checkout.
+3. **Declined case:** enter `4000 0000 0000 0002`, any future expiry, any CVC, any postcode. Expected: Stripe shows a decline message, no subscription is created, workspace stays restricted (HTTP 402 on workspace routes). Screenshot the page (no URL bar).
+4. Close, reopen Checkout. **Successful case:** `4242 4242 4242 4242`. Expected: redirect back to `/pricing?billing=success`, workspace becomes active, workspace routes return 200.
+5. Owner replies with: declined message shown (Y/N), success redirect (Y/N), workspace active (Y/N), screenshots.
+6. The agent then verifies from the API/Stripe: session status, subscription tenant metadata equals workspace P, entitlements, Stripe-delivered events (pending_webhooks 0), then restores QA to the exact candidate and deletes the synthetic Stripe objects.
+Record the two outcomes as separate acceptance results. This does NOT verify first-ever Checkout for a never-subscribed workspace (B8).
+
+## B8. Proposal: disposable admission-enabled first-customer acceptance environment (approval required before provisioning)
+Purpose: execute literal first-ever hosted Checkout, registration, email verification and onboarding, which the closed-admission acceptance environment correctly refuses.
+Proposed safeguards (all required):
+- A NEW Railway project/environment named for the run, separate from `geocore-qa-20261110`, shared staging and production; own PostgreSQL service, own volume for private uploads; synthetic data only; never connected to a customer domain.
+- Stripe TEST keys only (`sk_test_`/`rk_test_`, refused otherwise); a dedicated sandbox webhook endpoint pointing at the disposable API.
+- Admission enabled only inside this environment via its own variable, with a hard allowlist of synthetic owner emails (`@acceptance.invalid` plus the owner's own test alias); no public DNS, no link published; basic network restriction where Railway allows it.
+- Resend sandbox sender only; mail goes to the owner's test mailbox (B10).
+- Pinned to the exact candidate commit (`f503041`) via the pinned deploy mechanism; migration head asserted in the container; workflow refuses any other project or environment id.
+- Teardown procedure written first: delete the Stripe sandbox customers/subscriptions created, delete the environment (database and volume), remove the webhook endpoint, remove temporary secrets, confirm nothing remains with a read-only listing.
+- Cost: one small Postgres service and one volume for under a day (owner to confirm acceptable).
+Executes: registration → verification email click-through → workspace → first hosted Checkout (success and decline, via B7 by the owner) → entitlement → cancel/resume.
+**Nothing is provisioned and admission is not opened until the owner approves this proposal in writing.** Until then literal first-ever Checkout stays BLOCKED.
+
+## B9. Proposal: replacement-infrastructure recovery exercise (approval required before paid resources)
+Purpose: prove recovery without relying on the original database server or the original private-upload location (the current drill is logical restoration on the same PostgreSQL server).
+Smallest safe exercise (synthetic data only):
+1. Capture from isolated QA with the existing hardened drill machinery (dump + matched uploads bundle + manifests + checksums).
+2. Provision a disposable replacement: one new PostgreSQL service (same major version, 18) and one new empty volume in a separate disposable Railway environment (this is the paid resource).
+3. Restore the dump into the replacement and the uploads bundle into the replacement volume, using only the bundle and recorded checksums — no access to the source database or the source volume.
+4. Start a disposable application against the replacement database and volume; repeat the drill's checks: migration `c7d8e9f0a1b2`, fingerprints, per-tenant counts, 34-file manifest, database-to-file consistency, authenticated retrieval for two tenants, cross-tenant 404, anonymous refusal.
+5. Measure: time to provision, restore time, first successful authenticated retrieval, and the recovery-point limit (a logical dump gives RPO = time since the dump; there is no PITR/WAL on the QA database, and production PITR/WAL status remains UNKNOWN — doc 21 B2).
+6. Tear down the disposable environment and verify nothing remains.
+Approval needed: permission to provision the two paid resources for under a day and to create the disposable environment. Not executed; classified NOT EXECUTED.
+
+## B10. Consolidated owner-action checklist
+| # | Action | Unblocks | Needs |
+|---|---|---|---|
+| 1 | Approve or amend the disposable admission-enabled first-customer environment (B8) | first-ever Checkout, registration, verification click-through | written approval; cost acceptance |
+| 2 | Real email verification AND password-reset click-through: nominate the test mailbox; the agent sends from the disposable/sandbox sender; owner reports receipt, subject/sender, link click, expired and reused link behaviour | REGISTRATION-EMAIL, PASSWORD-RESET gates | mailbox access by the owner (the agent has none) |
+| 3 | Complete the owner-assisted hosted Checkout, declined then successful (B7), and report | hosted Checkout (both outcomes) | ~15 minutes at a browser |
+| 4 | Approve or amend the replacement-infrastructure recovery exercise (B9) | replacement-infrastructure recovery | approval for two small paid resources |
+| 5 | Approve a shared-staging A1 window with a named operator, or decide the alternative (doc 21 B1) | recovery point on shared staging | window, operator, owner approval file |
+| 6 | Read-only production inspection (doc 21 B2): PITR/WAL status, service configuration, admission setting | PITR-WAL, PROD-CONFIG, ADMISSION | operator with read-only Railway |
+| 7 | Monitoring and support: name the support mailbox and targets; set alert recipients; send a real test enquiry; confirm a billing-failure alert actually reaches the owner (log marker exists; delivery unverified) | MONITORING, SUPPORT | owner decisions and a monitored inbox |
+| 8 | Adopt the legal policies and supply operator/company details (doc 21 B4) | LEGAL-COMMERCIAL | owner and UK solicitor |
+| 9 | Catalogue import: decide the import method and approve the proposal (doc 21 B6); no importer exists | catalogue acceptance | owner decision |
+| 10 | Approve the release defaults: approval authority, Staff powers, quote-revision workflow, invoice-supplier settings (doc 21 B5) | ROLE-PERMS, QUOTE, INVOICE-SUPPLIER confirmations | owner approval |
+| 11 | Review and merge PR #77 (recovery tooling) after required CI is green; decide whether `qa/stripe-ext` is integrated | tooling integration | reviewer |
+
+Smallest sequence to a controlled pilot: items 2 and 1 together (mailbox + disposable environment) → item 3 → item 7 (support and alerts) → item 8 (legal) → item 10 (defaults) → item 9 (catalogue) → items 5 and 6 (staging window and production read-only inspection) → items 4 and 11. Production deployment, shared-staging replacement and public admission stay out of scope until each gate above is explicitly verified.
