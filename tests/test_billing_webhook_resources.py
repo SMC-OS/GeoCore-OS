@@ -54,6 +54,15 @@ def test_webhook_resource_dispatch(monkeypatch, representation, event_type, obje
     event = {"object": "event", "id": "evt_sdk", "type": event_type, "data": {"object": obj}}
     monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_local_regression")
     monkeypatch.setattr(settings, "stripe_price_pro_monthly", "price_sdk")
+    if representation == "sdk":
+        # A real signed SDK event always carries `created`; the service now rejects one that does not. This test is
+        # about resource normalisation and handler dispatch, so reconciliation's Stripe read is replaced by a direct
+        # dispatch (reconciliation itself is covered against the real SDK in test_billing_bounded_reads.py).
+        event["created"] = 1893456000
+        monkeypatch.setattr(
+            BillingService, "_reconcile_stripe_event",
+            lambda self, db, stripe_module, event_type_, obj_, at_: BillingService._EVENT_HANDLERS[event_type_](self, db, obj_),
+        )
     payload = json.dumps(event).encode()
     timestamp = str(int(time.time()))
     digest = hmac.new(
