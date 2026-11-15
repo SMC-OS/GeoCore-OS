@@ -44,18 +44,21 @@ jobs:
           sudo /opt/rehearsal-venv/bin/pip install -q -r requirements.txt
           sudo chmod -R a+rX /opt/rehearsal-venv
           sudo -u nobody /opt/rehearsal-venv/bin/python -c "import fastapi, psycopg, alembic; print('interpreter usable by an unprivileged user')"
-      - name: Run all rehearsal tests as root
+      - name: "Run all rehearsal tests as root (fail-closed - exactly 28 passed, 0 failed, 0 errors, 0 skipped)"
         shell: bash
         run: |
           set -uo pipefail
           # The application drops to UID 10001 (as on Railway); /home/runner is not traversable by that user, so run from a copy.
           sudo rm -rf /opt/rehearsal-repo && sudo cp -a "$PWD" /opt/rehearsal-repo && sudo chmod -R a+rX /opt/rehearsal-repo
-          (cd /opt/rehearsal-repo && sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE="$PWD/rehearsal-evidence.json" \
-            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider 2>&1) | tee rehearsal-output.txt
-          sudo cp /opt/rehearsal-repo/rehearsal-evidence.json . 2>/dev/null || true
-          rc="${PIPESTATUS[0]}"
-          grep -E "passed|failed|skipped|error" rehearsal-output.txt | tail -3
-          exit "$rc"
+          (cd /opt/rehearsal-repo && sudo env REHEARSAL_PYTHON=/opt/rehearsal-venv/bin/python REHEARSAL_EVIDENCE=/opt/rehearsal-repo/rehearsal-evidence.json \
+            PATH="$PATH" /opt/rehearsal-venv/bin/python -m pytest tests/test_writer_barrier_rehearsal.py -v -rs -p no:cacheprovider \
+            --junitxml=/opt/rehearsal-repo/rehearsal-junit.xml 2>&1) | tee rehearsal-output.txt
+          PYTEST_RC="${PIPESTATUS[0]}"   # captured IMMEDIATELY after the pipeline, before any other command
+          sudo cp /opt/rehearsal-repo/rehearsal-evidence.json /opt/rehearsal-repo/rehearsal-junit.xml . 2>/dev/null || true
+          python3 scripts/qa/verify_pytest_junit.py rehearsal-junit.xml --expect-passed 28
+          VERIFY_RC=$?
+          echo "pytest exit=$PYTEST_RC verifier exit=$VERIFY_RC"
+          [[ "$PYTEST_RC" -eq 0 && "$VERIFY_RC" -eq 0 ]]
       - name: Retain redacted evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,5 +67,6 @@ jobs:
           path: |
             rehearsal-output.txt
             rehearsal-evidence.json
+            rehearsal-junit.xml
           retention-days: 14
           if-no-files-found: warn
