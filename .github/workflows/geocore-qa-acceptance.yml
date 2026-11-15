@@ -2,7 +2,8 @@ name: GeoCore isolated QA authenticated acceptance
 
 # Runs the eight STONE-GATE / DEF-003 browser acceptance tests against the ISOLATED, synthetic-data
 # Railway QA environment (project geocore-qa-20261110, environment acceptance) from a GitHub-hosted
-# runner. Manual dispatch or a push that changes this file. Never targets shared staging or production:
+# runner. MANUAL DISPATCH ONLY: a push that edits this file must never start an acceptance run, because the
+# run is only meaningful once geocore-qa-deploy-candidate.yml has put BOTH matching candidate deployments in place. Never targets shared staging or production:
 # the hosts and IDs are fixed below and the Playwright config independently refuses anything else.
 #
 # Secret: GEOCORE_QA_RAILWAY_TOKEN, a Railway PROJECT token for geocore-qa-20261110 / acceptance.
@@ -21,12 +22,6 @@ on:
         description: "Stop at the first failure with a 90 s per-test timeout (fast iteration). Default runs all eight with full timeouts."
         type: boolean
         default: false
-  push:
-    branches:
-      - ccr-12966459-skf9q0
-      - qa/geocore-closure-20261105
-    paths:
-      - '.github/workflows/geocore-qa-acceptance.yml'
 
 permissions:
   contents: read
@@ -42,7 +37,7 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
-      EXPECTED_SHA: 2dda56b18f630d3014650bef959e34132ba8fc96
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
       EXPECTED_MIGRATION: c7d8e9f0a1b2
       QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
@@ -135,6 +130,7 @@ jobs:
           echo "::add-mask::$PW_B"
           base64 -w0 scripts/qa/provision_synthetic_owner.py | set_qa_var QA_PROVISION_PY_B64
           provision_script_sh | base64 -w0 | set_qa_var QA_PROVISION_SH_B64
+          printf '%s' "$EXPECTED_MIGRATION" | set_qa_var QA_EXPECT_MIGRATION
           printf '%s' "stone-gate-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_A_EMAIL
           printf '%s' "QA acceptance A $RUN" | set_qa_var QA_OWNER_A_COMPANY
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
@@ -158,6 +154,10 @@ jobs:
           [[ "$PROV_ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]]
           echo "Provisioned candidate $PROV_ID $SHA" | tee -a qa-identity.txt
           deployment_log_summary "$PROV_ID" | tee -a qa-identity.txt
+          # The deployed database must report exactly the expected Alembic head (queried inside the container).
+          MIG="$(railway logs "$PROV_ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 2000 2>&1 | grep -a '^QA_MIGRATION|' | tail -1 | tr -d '\r')"
+          echo "$MIG" | tee -a qa-identity.txt
+          [[ "$MIG" == "QA_MIGRATION|$EXPECTED_MIGRATION|PASS" ]] || { echo "MIGRATION HEAD ASSERTION FAILED (expected $EXPECTED_MIGRATION)"; exit 1; }
           wait_for_ready "$QA_API" 300 | tee -a qa-identity.txt
           EMAIL_A="stone-gate-$RUN@acceptance.invalid"
           EMAIL_B="stone-gate-other-$RUN@acceptance.invalid"
