@@ -11,6 +11,9 @@ name: GeoCore isolated QA deploy candidate (pinned SHA)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [qa/deploy-register]
+    paths: ['.github/workflows/geocore-qa-deploy-candidate.yml']
 
 permissions:
   contents: read
