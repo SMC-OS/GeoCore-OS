@@ -347,8 +347,11 @@ def test_04_uploads_gap_then_freeze(env, api):
                                 files={"file": ("late.pdf", io.BytesIO(pdf(9)), "application/pdf")}, headers=S["token"])
     r = upload()
     orphans = sorted(set(env["uploads"].iterdir()) - {env["uploads"] / e["relative_path"] for e in S["m_pre"]["entries"]})
-    record("FINDING: with the DB barrier alone, a rejected upload still leaves an orphan FILE (uploads layer is mandatory)",
-           r.status_code >= 400 and len(orphans) == 1, status=r.status_code, orphan_files=len(orphans))
+    # The original rehearsal (pre QA-UPLOAD-ORPHAN fix) recorded that a rejected upload left ONE orphan file, which made the uploads
+    # layer mandatory. The candidate now removes the file when the database write is rejected, so the orphan must no longer appear.
+    # The uploads freeze is kept (defence in depth, and the capture method still requires frozen uploads); only the stale expectation changes.
+    record("RESOLVED FINDING: with the DB barrier alone, a rejected upload is refused AND leaves no orphan file (QA-UPLOAD-ORPHAN fix)",
+           r.status_code >= 400 and len(orphans) == 0, status=r.status_code, orphan_files=len(orphans))
     for o in orphans:
         o.unlink()  # rehearsal cleanup, as the owning user
     state = env["private"] / "uploads-state.json"
