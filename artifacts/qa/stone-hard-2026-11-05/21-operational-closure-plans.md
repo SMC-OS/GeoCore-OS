@@ -69,3 +69,13 @@ Each line needs the owner's own act; **no approval, signature or acceptance is r
 | VAT position | no VAT number evidenced; none displayed | accountant | |
 | Customer support terms | none adopted | from B3 | |
 | Initial operating limits communicated | <=10 workspaces, <=30 concurrent users (measured, small data) | owner accepts | |
+
+
+## B5. Release-defaults proposal for owner review (implemented, tested, awaiting approval)
+- **Approval policy:** the Owner approves financial commitments (quotes, variations, purchase orders). Staff can prepare and submit but receive 403 on approval. An Owner can delegate or withdraw approval authority per Staff user (Team settings); the server enforces it on every approval route; approver, amount and time are recorded; a Staff user cannot self-delegate and no other workspace can delegate.
+- **Quote revision behaviour:** an approved quote is never edited. "Create revision" makes a new draft (revision 2, 3, ...) with the same customer, scope, lines and totals; the original keeps its status, total, approval time and approver; history lists every revision with its approved amount; revising a draft is refused (edit it instead).
+- **Supplier settings (per workspace, never prefilled):** legal name, trading name, company number, business address, VAT registered yes/no and VAT number, bank account name/sort code/account number or payment instructions, payment terms (default 30 days). Issuing an invoice is refused with the list of missing fields until these are complete for the workspace's VAT status (a non-VAT-registered workspace cannot charge VAT). On first issue the supplier details are frozen onto the invoice with a calculated due date; later changes never alter an issued invoice.
+- **Owner decision needed:** accept, amend or reject each of the three behaviours; evidence is in the ledger (isolated QA) and doc 19.
+
+## B6. Supplier catalogue-import mechanism
+Search of `scripts/`, `app/` and `docs/` (local, 15 Nov) found catalogue READ/pricing code (`app/catalogue`, quote and procurement use) but **no supported import tool or documented import procedure**. The production catalogue-import gate therefore has no mechanism to verify. Proposed (separately reviewed, not implemented): an idempotent, dry-run-first importer reading a versioned CSV/JSON source, writing inside one transaction, producing a count/hash reconciliation report, runnable first against the scratch restore (B1 step 6) and only then production in an approved window. Until the owner confirms how the production catalogue is populated today, the gate stays UNKNOWN.

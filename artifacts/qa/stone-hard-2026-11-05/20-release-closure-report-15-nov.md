@@ -105,3 +105,36 @@ Shared-staging recovery rehearsal and PITR verification; production recovery poi
 
 ## 10. Verdict
 **Production GO/NO-GO: NO-GO (HOLD).** Isolated technical acceptance is verified by successful workflows on the integrated candidate. That is not launch approval: recovery, production readiness, monitoring, support and legal gates are open, and several billing and e-mail scenarios were not executed.
+
+
+---
+## 11. UPDATE — final technical closure, 15 Nov (supersedes sections 5, 6 and 10 where stated)
+Evidence classes: **Local** (this session, fresh PostgreSQL / local fake Stripe), **CI**, **Deployed QA**, **Owner-confirmed**, **Production** (none exists).
+
+### 11.1 New finding that supersedes earlier Stripe conclusions — FAILED (fixed in PR #75, not yet merged)
+`stripe.Event` (SDK 15.6.1) is not a dict and has no `.get`; `BillingService._event_time()` used `event.get("created")`, so it returned `None` for **every real webhook**. Events without a time take the legacy snapshot handler, so the authoritative reconciliation, stale-event protection and the lock/ordering design merged in PR #74 never ran for real Stripe events; only dict test fixtures reached them. (The original `.get` pattern came from my earlier stale-event commit `db763c3`.) Reproduced locally and fixed with subscript access; regression test uses a real `stripe.Event`.
+Consequences: (a) the Stripe sandbox run 43662721622 (owner) passed on the legacy path and therefore does **not** prove reconciliation, ordering or locking; its other conclusions (prices, trial, renewal, cancel/resume, plan change, cancellation) stand as outcome evidence only. (b) The candidate `2dda56b` must **not** be treated as the billing release candidate. (c) Section 5 "Correct, idempotent" rows described the unit-test path, not the real-event path, and are superseded by 11.2.
+
+### 11.2 Webhook reliability correction — Local evidence, PR #75 (draft), CI pending
+Base `6ccc86139c609ff9f2072656204820aa93265603`; head `2739f37` (product commit `accf6a7`). Changed: `app/billing/service.py`, `tests/test_billing_bounded_reads.py`, two measurement scripts. No migration.
+| Measure | Before | After |
+|---|---|---|
+| One Stripe read against a hung server (real SDK, local fake) | 241.3 s, 3 attempts (module defaults 80 s x 3) | 20.52 s, 2 attempts (connect 5 s, read 10 s, 1 retry; narrowly scoped client used only for reconciliation reads); 429/5xx retry once, 0.5 s |
+| Scaled starvation run (pool 4, burst of 6 same-tenant events, hung Stripe) | max connection hold 53.2 s; unrelated probes failed 4 of 164 | read bound only: hold 12.55 s, 1 of 32 failed; read bound + 5 s lock-wait bound: hold 2.53 s, 0 of 7 failed, max probe latency 0.76 s |
+| Recovery when Stripe answers | ok | ok (redelivery applies the event; duplicates never touch Stripe) |
+The read bound alone is **not** sufficient (same-tenant bursts queue on the lock holding connections); the lock-wait bound is a separable second change. Not a hard guarantee for a slow-trickle response. 14 new tests: connection failure, read timeout, 429, 5xx, redelivery after failure, duplicate after success, concurrent same-tenant, concurrent different-tenant, pool availability, cross-tenant linkage conflict, out-of-order, lock-wait bound, failure classification logging, real-SDK event time. Local full backend: **1894 passed, 31 skipped** (28 rehearsal tests NOT executed; 3 PowerShell tests unavailable locally). Frontend 424 passed; pip-audit clean; secret scan 0; single Alembic head `c7d8e9f0a1b2`. Browser E2E: CI only.
+**Poison events:** a permanent conflict (tenant linkage, ambiguous or duplicate live subscription) is not acknowledged or discarded; it returns 5xx on every redelivery and now logs `billing_webhook_permanent_failure event_id=... event_type=... reason=...`. Operational handling: alert on that log line and on repeated 5xx from `/billing/webhook` for one event id; a human compares the Stripe subscription's tenant metadata with the workspace and decides (correct the metadata or the link). No auto-discard without a reviewed design. Transient failures log `billing_webhook_transient_failure`.
+
+### 11.3 Status of authorised items
+| Item | Class | Notes |
+|---|---|---|
+| 1 Webhook correction implemented and tested | PARTIAL | local VERIFIED; CI PENDING; review PENDING |
+| 2 New reviewed candidate | PENDING | after PR #75 review and CI; then pin and deploy |
+| 3 Hosted first Checkout (QA) | NOT EXECUTED | needs the deployed new candidate and an isolated admission mechanism; hosted-page automation untested |
+| 4 Declined payment and recovery | NOT EXECUTED | same |
+| 5 Signed replay / duplicate / out-of-order on QA | NOT EXECUTED | locally signed events only; must be labelled as not Stripe-originated |
+| 6 Billing tenant isolation on QA | NOT EXECUTED | |
+| 7 Email click-through | BLOCKED / UNKNOWN | no mailbox access in this session; owner-assisted procedure in doc 21 |
+| 8 Explicit migration-head assertion | PARTIAL | implemented and tested locally on branch `qa/acceptance-migration-assertion` (`47614c5`); not yet run deployed |
+| 9 Documentation and ledger | this update | |
+Production/customer release: **HOLD / NO-GO.** PR #68 and #69 HOLD.
