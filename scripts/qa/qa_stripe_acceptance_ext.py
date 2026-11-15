@@ -131,16 +131,23 @@ def checkout_for(owner):
 
 
 def run():
-    A = Owner(os.environ["STAGING_OWNER_EMAIL"], os.environ["STAGING_OWNER_PASSWORD"])
-    B = Owner(os.environ["STAGING_OWNER_B_EMAIL"], os.environ["STAGING_OWNER_B_PASSWORD"])
+    # PRIMARY (variable B below) = the owner the base script just took through a real subscription and cancellation: it holds a
+    # (terminal) Stripe contract, so closed admission still lets it use hosted Checkout to resubscribe. SECONDARY (variable A below)
+    # = the other synthetic owner. A workspace with NO Stripe subscription is refused Checkout while admission is closed (policy;
+    # admission stays closed here), so a literal never-subscribed "first Checkout" cannot be executed in this environment.
+    A = Owner(os.environ["STAGING_OWNER_B_EMAIL"], os.environ["STAGING_OWNER_B_PASSWORD"])
+    B = Owner(os.environ["STAGING_OWNER_EMAIL"], os.environ["STAGING_OWNER_PASSWORD"])
     bsub0, asub0 = B.sub(), A.sub()
     TB, TA = bsub0["tenant_id"], asub0["tenant_id"]
     ok("two distinct synthetic workspaces", TA != TB, "stripe")
     created_customers, created_subs, open_sessions = [], [], []
     try:
-        # ---- Hosted Checkout: declined card, then successful first Checkout (owner B) -----------------------------
+        # ---- Hosted Checkout: declined card, then successful first Checkout (primary owner) -----------------------------
         before = B.sub()
-        ok("owner B has a working no-card trial workspace", before.get("status") == "trialing" and B.workspace_code() == 200, "stripe")
+        ok("primary workspace is cancelled after the base run and restricted (402)", before.get("status") in ("cancelled", "canceled") and B.workspace_code() == 402, "stripe")
+        ok("secondary workspace is a no-card trial with workspace access", A.sub().get("status") == "trialing" and A.workspace_code() == 200, "stripe")
+        nc, _ = A.call("POST", "/billing/checkout", {"plan": "starter", "billing_period": "monthly"})
+        ok("closed admission refuses Checkout for a workspace with no Stripe subscription (policy; admission not opened)", nc == 403, "stripe", f"HTTP {nc}")
         code, url, sid = checkout_for(B)
         if code != 200 or not sid:
             rec("hosted Checkout session created (decline path)", "BLOCKED", "stripe", f"POST /billing/checkout HTTP {code}")
@@ -152,7 +159,7 @@ def run():
                 after = B.sub()
                 ok("hosted Checkout with a declined test card is refused by Stripe and creates no subscription",
                    s.get("status") == "open" and s.get("payment_status") != "paid" and not s.get("subscription"), "stripe")
-                ok("declined payment leaves entitlements and plan unchanged", after.get("status") == before.get("status") and after.get("plan") == before.get("plan") and B.workspace_code() == 200, "stripe")
+                ok("declined payment leaves entitlements and plan unchanged (still cancelled and restricted)", after.get("status") == before.get("status") and after.get("plan") == before.get("plan") and B.workspace_code() == 402, "stripe")
             else:
                 rec("hosted Checkout declined-card page interaction", "BLOCKED", "stripe", f"browser outcome={r['outcome']} {r.get('detail','')}")
             stripe_req("POST", "/checkout/sessions/" + sid + "/expire", {})
@@ -168,15 +175,15 @@ def run():
             if r["outcome"] == "complete":
                 open_sessions.remove(sid)
                 s = stripe_req("GET", "/checkout/sessions/" + sid)[1]
-                ok("hosted Checkout completed with the Stripe test card", s.get("status") == "complete" and s.get("livemode") is False and s.get("client_reference_id") == TB, "stripe")
+                ok("hosted Checkout (resubscribe by an existing-contract workspace) completed with the Stripe test card", s.get("status") == "complete" and s.get("livemode") is False and s.get("client_reference_id") == TB, "stripe")
                 cur = B.poll(lambda x: x.get("status") in ("active", "trialing") and x.get("plan") == "starter" and x.get("trial_state") is None, 240)
-                completed = ok("actual Stripe webhooks linked the Checkout subscription to workspace B and access continues", cur is not None and B.workspace_code() == 200, "stripe")
+                completed = ok("actual Stripe webhooks linked the Checkout subscription to primary workspace and access continues", cur is not None and B.workspace_code() == 200, "stripe")
                 stripe_sub_id = s.get("subscription")
                 if stripe_sub_id:
                     created_subs.append(stripe_sub_id)
                     created_customers.append(s.get("customer"))
                     ss = stripe_req("GET", "/subscriptions/" + stripe_sub_id)[1]
-                    ok("Stripe subscription is tenant-bound to workspace B only", ss.get("metadata", {}).get("tenant_id") == TB and ss.get("livemode") is False, "stripe")
+                    ok("Stripe subscription is tenant-bound to primary workspace only", ss.get("metadata", {}).get("tenant_id") == TB and ss.get("livemode") is False, "stripe")
                     # Stripe delivered the events to the QA endpoint (pending_webhooks == 0 means no outstanding delivery).
                     evs = stripe_req("GET", "/events?limit=40&types[]=checkout.session.completed&types[]=customer.subscription.created")[1].get("data", [])
                     mine = [e for e in evs if e.get("data", {}).get("object", {}).get("id") in (sid, stripe_sub_id)]
@@ -233,13 +240,13 @@ def run():
             rec("billing portal for the subscriber", "BLOCKED", "stripe", f"POST /billing/portal HTTP {code}")
         else:
             r = browser("portal", purl, B.email)
-            ok("hosted billing portal opens for workspace B", r["outcome"] == "portal_loaded", "stripe", r.get("detail", ""))
+            ok("hosted billing portal opens for primary workspace", r["outcome"] == "portal_loaded", "stripe", r.get("detail", ""))
         pa_code, pa = A.call("POST", "/billing/portal")
         a_url = pa.get("portal_url", "") if pa_code == 200 else ""
-        ok("owner A cannot obtain a portal for workspace B's customer", pa_code != 200 or a_url != purl, "stripe", f"HTTP {pa_code}")
+        ok("secondary owner cannot obtain a portal for primary workspace's customer", pa_code != 200 or a_url != purl, "stripe", f"HTTP {pa_code}")
         ca_code, _ = A.call("POST", "/billing/cancel")
-        ok("owner A's cancel request cannot affect workspace B", B.sub().get("cancel_at_period_end") is False, "stripe", f"A cancel HTTP {ca_code}")
-        ok("workspace A billing view never exposes workspace B", A.sub().get("tenant_id") == TA, "stripe")
+        ok("secondary owner's cancel request cannot affect primary workspace", B.sub().get("cancel_at_period_end") is False, "stripe", f"A cancel HTTP {ca_code}")
+        ok("secondary workspace billing view never exposes primary workspace", A.sub().get("tenant_id") == TA, "stripe")
 
         # ---- Cancellation and resume (webhook-confirmed) ---------------------------------------------------------------
         ok("cancel at period end accepted", B.call("POST", "/billing/cancel")[1].get("cancel_at_period_end") is True, "stripe")
@@ -284,13 +291,13 @@ def run():
         if a_sub:
             created_subs.append(a_sub)
             linked = A.poll(lambda x: x.get("plan") == "starter" and x.get("status") in ("trialing", "active"), 240)
-            ok("workspace A linked to its own new Stripe subscription by actual webhook", linked is not None, "stripe")
+            ok("secondary workspace linked to its own new Stripe subscription by actual webhook", linked is not None, "stripe")
             mixed = burst(8, lambda i: post_event(evt(), "customer.subscription.updated",
                                                    sub_obj(sub_id if i % 2 == 0 else a_sub, cust_id if i % 2 == 0 else acust, TB if i % 2 == 0 else TA, "active"), int(time.time())))
             ok("concurrent different-tenant events: every response is 200 or a retryable 503", all(c in (200, 503) for c, _, _ in mixed), "local-signed", str(sorted(c for c, _, _ in mixed)))
             ok("different-tenant events keep each workspace on its own subscription", A.sub().get("tenant_id") == TA and B.sub().get("tenant_id") == TB and B.sub().get("status") == "active", "local-signed")
 
-            # Cross-tenant linkage rejection: event for A's subscription claiming workspace B
+            # Cross-tenant linkage rejection: event for A's subscription claiming primary workspace
             before_a, before_b = A.sub(), B.sub()
             xt = evt()
             xc = post_event(xt, "customer.subscription.updated", sub_obj(a_sub, acust, TB, "active"), int(time.time()))[0]
