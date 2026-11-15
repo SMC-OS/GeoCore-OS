@@ -23,6 +23,8 @@ import matched_bundle  # noqa: E402
 import restore_upload_bundle as rub  # noqa: E402
 
 OUT = Path(os.environ.get("DRILL_WORK", "/tmp/qa-drill"))
+EXPECTED_MIGRATION = os.environ.get("QA_EXPECT_MIGRATION", "c7d8e9f0a1b2")
+RESTORED_APP_PORT = int(os.environ.get("DRILL_RESTORED_APP_PORT", "8101"))
 ok = True
 
 
@@ -152,6 +154,88 @@ def tenant_counts(dsn):
     return out
 
 
+def restored_app_checks(rdsn, scratch, upr):
+    """Database-to-file consistency and authenticated retrieval / tenant isolation through a SEPARATE application process started
+    against the RESTORED database and the RESTORED uploads directory (loopback only, torn down afterwards)."""
+    import hashlib as _h
+    import urllib.error
+    import psycopg
+    with psycopg.connect(rdsn) as c:
+        docs = c.execute("select id::text, tenant_id::text, storage_filename, size_bytes from documents order by id").fetchall()
+        owners = c.execute(
+            """select u.id::text, u.tenant_id::text, u.token_version from users u join subscriptions s on s.tenant_id = u.tenant_id
+               where u.is_active and u.role = 'owner' and u.email_verified_at is not null and s.status in ('active','trialing')
+                 and exists (select 1 from documents d where d.tenant_id = u.tenant_id) order by u.created_at""").fetchall()
+    check("synthetic document dataset is non-empty (database rows exist)", len(docs) > 0, f"{len(docs)} rows")
+    by_path = {e["relative_path"]: e for e in upr["entries"]}
+    missing = [d for d in docs if d[2] not in by_path]
+    wrong_size = [d for d in docs if d[2] in by_path and by_path[d[2]]["size_bytes"] != d[3]]
+    check("every document row has its private file in the restored uploads (database -> file)", not missing, f"{len(missing)} missing of {len(docs)}")
+    check("every restored document file has the size recorded in its row", not wrong_size, f"{len(wrong_size)} mismatched")
+    referenced = {d[2] for d in docs}
+    unreferenced = [p for p in by_path if p not in referenced]
+    say(f"NOTE restored upload files not referenced by a document row: {len(unreferenced)} of {len(by_path)} (informational: other upload kinds)")
+    tenants = {}
+    for uid, tid, tv in owners:
+        tenants.setdefault(tid, (uid, tv))
+    if len(tenants) < 2:
+        check("restored application: at least two tenants with an active owner and documents exist for the isolation test", False, f"{len(tenants)} found")
+        return
+    (ta, (ua, tva)), (tb, (ub, tvb)) = list(tenants.items())[:2]
+    doc_a = next(d for d in docs if d[1] == ta)
+    doc_b = next(d for d in docs if d[1] == tb)
+    APP_DIR = os.environ.get("DRILL_APP_DIR", "/app")
+    sys.path.insert(0, APP_DIR)
+    from app.auth.security import create_access_token
+    tok_a, tok_b = create_access_token(ua, ta, tva), create_access_token(ub, tb, tvb)
+    from psycopg.conninfo import conninfo_to_dict
+    from urllib.parse import quote
+    d = conninfo_to_dict(rdsn)
+    cred = quote(d["user"], safe="") + (":" + quote(d["password"], safe="") if d.get("password") else "")
+    url = f"postgresql+psycopg://{cred}@{d['host']}:{d.get('port', 5432)}/{d['dbname']}"
+    env = {**os.environ, "DATABASE_URL": url, "UPLOAD_DIR": str(scratch), "PORT": str(RESTORED_APP_PORT)}
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(RESTORED_APP_PORT), "--no-access-log"],
+                            cwd=APP_DIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f"http://127.0.0.1:{RESTORED_APP_PORT}"
+
+    def get(path, token=None):
+        req = urllib.request.Request(base + path, headers={"Authorization": f"Bearer {token}"} if token else {})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, b""
+        except Exception:  # noqa: BLE001
+            return 0, b""
+    try:
+        up = False
+        for _ in range(60):
+            if get("/ready")[0] == 200:
+                up = True
+                break
+            time.sleep(1)
+        check("restored application (separate process, restored database + restored uploads) is ready", up)
+        if not up:
+            return
+        code, body = get(f"/api/v1/documents/{doc_a[0]}/download", tok_a)
+        want = by_path.get(doc_a[2], {}).get("sha256")
+        check("restored app: tenant A owner downloads A's document and the bytes match the restored manifest SHA-256", code == 200 and _h.sha256(body).hexdigest() == want, f"HTTP {code}")
+        code, body = get(f"/api/v1/documents/{doc_b[0]}/download", tok_b)
+        check("restored app: tenant B owner downloads B's document and the bytes match the restored manifest SHA-256", code == 200 and _h.sha256(body).hexdigest() == by_path.get(doc_b[2], {}).get("sha256"), f"HTTP {code}")
+        check("restored app: tenant B owner cannot read tenant A's document (404)", get(f"/api/v1/documents/{doc_a[0]}/download", tok_b)[0] == 404)
+        check("restored app: tenant A owner cannot read tenant B's document (404)", get(f"/api/v1/documents/{doc_b[0]}/download", tok_a)[0] == 404)
+        check("restored app: anonymous request is refused", get(f"/api/v1/documents/{doc_a[0]}/download")[0] in (401, 403))
+        listed = get("/api/v1/documents", tok_a)
+        check("restored app: tenant A's document list contains none of tenant B's documents", listed[0] == 200 and doc_b[0] not in listed[1].decode("utf-8", "replace"), f"HTTP {listed[0]}")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        say("restored application stopped")
+
+
 def main():
     start_all = time.time()
     shutil.rmtree(OUT, ignore_errors=True)
@@ -196,6 +280,8 @@ def main():
     up1 = cf.uploads_manifest(uploads)
     quiet = not cf.diff_fingerprints(t0, t1) and not cf.diff_manifests(up0, up1)
     say(f"data unchanged between T0 and T1: {quiet}")
+    check("matched capture: database and uploads are unchanged between T0 and T1 (mandatory)", quiet, "; ".join((cf.diff_fingerprints(t0, t1) + cf.diff_manifests(up0, up1))[:3]))
+    check(f"source migration revision is exactly {EXPECTED_MIGRATION} at T0 and T1", t0["alembic_version"] == EXPECTED_MIGRATION == t1["alembic_version"], f"{t0['alembic_version']} / {t1['alembic_version']}")
 
     # ---- restore into a disposable database (never the active one) and an empty scratch uploads directory
     import psycopg
@@ -218,6 +304,7 @@ def main():
         problems = cf.diff_fingerprints(t1, rest)
         check("restored database equals the capture: all tables (rows + content hash), sequences, alembic revision", not problems, "; ".join(problems[:3]))
         check("restored alembic revision is the expected head", rest["alembic_version"] == t1["alembic_version"], rest["alembic_version"])
+        check(f"restored migration revision is exactly {EXPECTED_MIGRATION}", rest["alembic_version"] == EXPECTED_MIGRATION, rest["alembic_version"])
         check("restored row total equals the source", rest["row_total"] == t1["row_total"], f"{rest['row_total']} vs {t1['row_total']}")
         upr = cf.uploads_manifest(scratch)
         uprob = cf.diff_manifests(up1, upr)
@@ -226,6 +313,7 @@ def main():
         check("per-tenant row counts identical in the restored database (no cross-tenant leakage)", tc_src == tc_rest and len(tc_src) > 0, f"{len(tc_src)} vs {len(tc_rest)} keys")
         tenants_src = set(k.split(":")[1] for k in tc_src)
         say(f"tenants with data={len(tenants_src)}")
+        restored_app_checks(rdsn, scratch, upr)
     finally:
         try:
             with psycopg.connect(admin, autocommit=True) as c:
