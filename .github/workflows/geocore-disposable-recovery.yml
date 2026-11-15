@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "verify (read-only disposable token scope check) | probe-qa-template (read-only description of the existing QA services)"
+        description: "verify (read-only disposable token scope check) | probe-qa-template (read-only) | capture (QA container task: matched capture, emits the verified bundle; ends with exact-SHA QA restoration)"
         type: choice
-        options: [verify, probe-qa-template]
+        options: [verify, probe-qa-template, capture]
         default: verify
   push:
     branches: [qa/disposable-recovery]
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ inputs.mode != 'probe-qa-template' }}
+    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -53,3 +53,48 @@ jobs:
       - name: Describe the existing isolated-QA services (read-only; names and non-secret settings only)
         shell: bash
         run: bash scripts/disposable/probe_qa_template.sh
+
+  capture:
+    if: ${{ inputs.mode == 'capture' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: geocore-qa-acceptance
+      cancel-in-progress: false
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Capture inside isolated QA, retrieve the bundle through the verified transfer, restore QA to the exact candidate
+        shell: bash
+        run: |
+          set -u -o pipefail; set +e
+          source scripts/qa/qa_railway_ops.sh
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || { echo "start command is not the original; restore first"; exit 1; }
+          tar -czf /tmp/capture-src.tgz scripts/recovery/content_fingerprint.py scripts/recovery/matched_bundle.py scripts/recovery/restore_upload_bundle.py scripts/recovery/recovery_safety.py scripts/qa/qa_recovery_drill.py scripts/disposable/bundle_transfer.py
+          echo "task bundle base64 bytes: $(base64 -w0 /tmp/capture-src.tgz | wc -c) (Railway variable limit 32768)"
+          run_container_task scripts/qa/container_tasks/capture.sh /tmp/capture-src.tgz; task_rc=$?
+          read -r TASK_DEP _ _ < <(latest_deployment)
+          railway logs "$TASK_DEP" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 30000 2>&1 | tr -d '\r' > capture-log.txt
+          echo "task deployment log lines: $(wc -l < capture-log.txt), bundle lines: $(grep -c 'BUNDLE|' capture-log.txt)"
+          python3 scripts/disposable/bundle_transfer.py decode capture-log.txt recovery-bundle.tgz; decode_rc=$?
+          rm -f capture-log.txt
+          restore_qa_config_pinned "$EXPECTED_SHA"; restore_rc=$?
+          echo "task_rc=$task_rc decode_rc=$decode_rc restore_rc=$restore_rc"
+          [[ $decode_rc -eq 0 ]] && sha256sum recovery-bundle.tgz | cut -d' ' -f1 > recovery-bundle.sha256
+          exit $(( task_rc != 0 || decode_rc != 0 || restore_rc != 0 ))
+      - name: Retain the verified bundle (synthetic data only; one day)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-recovery-bundle
+          path: |
+            recovery-bundle.tgz
+            recovery-bundle.sha256
+          retention-days: 1
+          if-no-files-found: warn

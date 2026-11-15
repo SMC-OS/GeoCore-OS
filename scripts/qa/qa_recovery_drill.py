@@ -25,6 +25,7 @@ import restore_upload_bundle as rub  # noqa: E402
 OUT = Path(os.environ.get("DRILL_WORK", "/tmp/qa-drill"))
 EXPECTED_MIGRATION = os.environ.get("QA_EXPECT_MIGRATION", "c7d8e9f0a1b2")
 RESTORED_APP_PORT = int(os.environ.get("DRILL_RESTORED_APP_PORT", "8101"))
+CAPTURE_ONLY = os.environ.get("DRILL_MODE") == "capture"  # capture: assert the matched capture, emit the verified bundle, do not restore
 ok = True
 
 
@@ -236,6 +237,36 @@ def restored_app_checks(rdsn, scratch, upr):
         say("restored application stopped")
 
 
+def emit_capture_bundle(dump, archive, manifest, t0, t1, up1, recovery_point, snapshot_at, dsn):
+    """Pack dump + matched uploads bundle + manifest + integrity record into ONE gzip tar and print it as checksummed BUNDLE| lines.
+    The integrity record carries the T1 database fingerprint, the uploads manifest digest and the per-tenant counts, so a restore on
+    replacement infrastructure can be verified with no access to the source."""
+    import io
+    import tarfile
+    sys.path.insert(0, str(HERE.parent / "disposable"))
+    import bundle_transfer
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    integrity = {
+        "recovery_point": recovery_point, "captured_at_utc": snapshot_at, "expected_migration": EXPECTED_MIGRATION,
+        "dump": {"name": "qa.dump", "bytes": Path(dump).stat().st_size, "sha256": sha(dump)},
+        "uploads_archive": {"name": "uploads.tar", "bytes": Path(archive).stat().st_size, "sha256": sha(archive)},
+        "uploads_manifest": {"name": "uploads.manifest.json", "bytes": Path(manifest).stat().st_size, "sha256": sha(manifest)},
+        "t0_equals_t1": True, "db_fingerprint_t1": t1, "uploads_manifest_t1": up1, "tenant_counts": tenant_counts(dsn),
+    }
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name, path in (("qa.dump", dump), ("uploads.tar", archive), ("uploads.manifest.json", manifest)):
+            tf.add(path, arcname=name)
+        data = json.dumps(integrity, sort_keys=True).encode()
+        info = tarfile.TarInfo("integrity.json"); info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    blob = buf.getvalue()
+    say(f"CAPTURE bundle_bytes={len(blob)} bundle_sha256={hashlib.sha256(blob).hexdigest()} db_digest={t1['digest'][:16]} rows={t1['row_total']} alembic={t1['alembic_version']} files={up1['file_count']}")
+    for line in bundle_transfer.encode(blob):
+        print(line, flush=True)
+
+
 def main():
     start_all = time.time()
     shutil.rmtree(OUT, ignore_errors=True)
@@ -282,6 +313,13 @@ def main():
     say(f"data unchanged between T0 and T1: {quiet}")
     check("matched capture: database and uploads are unchanged between T0 and T1 (mandatory)", quiet, "; ".join((cf.diff_fingerprints(t0, t1) + cf.diff_manifests(up0, up1))[:3]))
     check(f"source migration revision is exactly {EXPECTED_MIGRATION} at T0 and T1", t0["alembic_version"] == EXPECTED_MIGRATION == t1["alembic_version"], f"{t0['alembic_version']} / {t1['alembic_version']}")
+
+    if CAPTURE_ONLY:
+        emit_capture_bundle(dump, archive, manifest, t0, t1, up1, recovery_point, snapshot_at, dsn)
+        shutil.rmtree(OUT, ignore_errors=True)
+        say("scratch files removed")
+        say("DONE" if ok else "FAILED")
+        return 0 if ok else 1
 
     # ---- restore into a disposable database (never the active one) and an empty scratch uploads directory
     import psycopg
