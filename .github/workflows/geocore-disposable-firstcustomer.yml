@@ -1,0 +1,37 @@
+name: GeoCore disposable first-customer acceptance
+
+# DISPOSABLE project geocore-disposable-qa-7f3c9a2e81, environment `first-customer` ONLY. Never targets production, shared staging, live Stripe
+# or the existing isolated QA. Spending cap $10 (owner-approved). Manual dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "verify-scope (read-only)"
+        type: choice
+        options: [verify-scope]
+        default: verify-scope
+  push:
+    branches: [qa/disposable-recovery]
+    paths: ['.github/workflows/geocore-disposable-firstcustomer.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-disposable-firstcustomer
+  cancel-in-progress: false
+
+jobs:
+  verify-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: first-customer
+    env:
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_DISPOSABLE_FIRSTCUSTOMER_RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Verify the first-customer token authenticates only against the disposable project and the first-customer environment
+        run: bash scripts/disposable/verify_firstcustomer_scope.sh
