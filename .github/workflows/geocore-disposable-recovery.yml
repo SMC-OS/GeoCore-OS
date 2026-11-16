@@ -149,7 +149,7 @@ jobs:
           img="ghcr.io/smc-os/geocore-recovery-api"
           echo "::add-mask::$GH_TOKEN_VALUE"
           echo "$GH_TOKEN_VALUE" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-          docker build --label "org.opencontainers.image.revision=$EXPECTED_SHA" -t "$img:$EXPECTED_SHA" candidate
+          docker build --label "org.opencontainers.image.revision=$EXPECTED_SHA" --label "org.opencontainers.image.source=https://github.com/SMC-OS/GeoCore-OS" -t "$img:$EXPECTED_SHA" candidate
           docker push "$img:$EXPECTED_SHA"
           ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$img:$EXPECTED_SHA")"
           echo "IMAGE_REF=$ref" >> "$GITHUB_ENV"; echo "REG_USER=$GH_ACTOR" >> "$GITHUB_ENV"; echo "REG_TOKEN=$GH_TOKEN_VALUE" >> "$GITHUB_ENV"

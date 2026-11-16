@@ -67,6 +67,14 @@ wait_id() {  # wait_id <service> <deployment-id> <timeout>: that exact deploymen
   while (( $(date +%s) < dl )); do st="$(railway deployment list --service "$1" --environment "$ENVID" --json --limit 10 2>/dev/null | jq -r --arg i "$2" '.[]|select(.id==$i)|.status')"; [[ "$st" == SUCCESS ]] && { echo "$2"; return 0; }; [[ "$st" == FAILED || "$st" == CRASHED ]] && { echo "$2 $st"; return 1; }; sleep 10; done; echo timeout; return 1
 }
 
+diag() {  # diag <service> <deployment-id>: non-secret failure evidence
+  ev "--- diagnostics for deployment $2"
+  for fl in --build --deployment; do
+    railway logs "$2" "$fl" --service "$1" --environment "$ENVID" --lines 60 2>&1 | tr -d '\r' | grep -aiE 'error|denied|unauthor|pull|manifest|fail|not found|exec|permission|crash|exit' | grep -aviE 'password|token|secret' | cut -c1-220 | head -12 | tee -a "$EVID"
+  done
+  gql 'query($i:String!){deployment(id:$i){status}}' "$(jq -nc --arg i "$2" '{i:$i}')" | jq -c '{status:.data.deployment.status, errors:[.errors[]?.message]}' | tee -a "$EVID"
+}
+
 upsert_vars() {  # upsert_vars <service-id> <json-object>  (values never printed)
   local r; r="$(gql 'mutation($i:VariableCollectionUpsertInput!){variableCollectionUpsert(input:$i)}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$1" --argjson v "$2" '{i:{projectId:$p,environmentId:$e,serviceId:$s,variables:$v,skipDeploys:true}}')")"
   [[ "$(jq -r '.data.variableCollectionUpsert // empty' <<<"$r")" == "true" ]] || { ev "variable upsert failed: $(gerr "$r")"; return 1; }
@@ -122,7 +130,7 @@ run() {
   r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" '{s:$s,e:$e}')")"
   depid="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; [[ -n "$depid" ]] || { ev "task deploy refused: $(gerr "$r")"; return 1; }
   ev "application deploy requested from pinned image $IMAGE_REF; waiting"
-  out="$(wait_id "$APP_NAME" "$depid" 1200)" || { ev "app task deployment failed: $out"; return 1; }
+  out="$(wait_id "$APP_NAME" "$depid" 1200)" || { ev "app task deployment failed: $out"; diag "$APP_NAME" "$depid"; return 1; }
   ev "IDENTITY task deployment $depid runs image $IMAGE_REF (built from exactly $EXPECTED_SHA)"
   local dl=$(( $(date +%s) + 1500 )) logs="" rc=1
   while (( $(date +%s) < dl )); do
