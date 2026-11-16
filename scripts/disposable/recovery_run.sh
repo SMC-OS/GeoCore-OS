@@ -162,5 +162,7 @@ case "${1:-}" in
   run) scope_guard; run "$2"; rc=$?; ev "RUN RESULT rc=$rc"; exit $rc ;;
   teardown) scope_guard; teardown ;;
   inventory) scope_guard; inventory ;;
+  inspect) scope_guard; gql 'query($i:String!){deployment(id:$i){id status statusUpdatedAt createdAt canRedeploy canRollback meta}}' "$(jq -nc --arg i "$2" '{i:$i}')" | jq -c 'del(.. | .RAILWAY_TOKEN?) | .' | cut -c1-1800
+    gql 'query($i:String!){deploymentEvents(id:$i,first:20){edges{node{step completedAt error}}}}' "$(jq -nc --arg i "$2" '{i:$i}')" | jq -c '.' | cut -c1-1200 ;;
   *) echo "usage: run <bundle.tgz> | teardown | inventory"; exit 64 ;;
 esac

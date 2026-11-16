@@ -12,6 +12,10 @@ on:
         type: choice
         options: [verify, probe-qa-template, capture, recover, teardown]
         default: verify
+      inspect_deployment_id:
+        description: "teardown mode: also print the status/meta of this deployment id (read-only)"
+        type: string
+        default: ""
       bundle_run_id:
         description: "recover: workflow run id that produced the geocore-recovery-bundle artifact"
         type: string
@@ -121,8 +125,11 @@ jobs:
       - name: Disposable token scope (must be exactly the disposable project and recovery environment)
         run: bash scripts/disposable/verify_token_scope.sh 482d0eff-ecd3-4457-8834-e0b49e897e42 43eadd7f-40be-4cdf-acb8-e1a8b33ba3b8 recovery
       - name: Teardown / verify empty
-        if: ${{ inputs.mode == 'teardown' }}
+        if: ${{ inputs.mode == 'teardown' && inputs.inspect_deployment_id == '' }}
         run: bash scripts/disposable/recovery_run.sh teardown
+      - name: Inspect a failed deployment (read-only, no variables printed)
+        if: ${{ inputs.mode == 'teardown' && inputs.inspect_deployment_id != '' }}
+        run: bash scripts/disposable/recovery_run.sh inspect "${{ inputs.inspect_deployment_id }}"
       - name: Download the captured bundle (artifact from the capture run)
         if: ${{ inputs.mode == 'recover' }}
         uses: actions/download-artifact@v4
