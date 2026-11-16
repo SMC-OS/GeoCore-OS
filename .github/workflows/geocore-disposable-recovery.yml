@@ -131,7 +131,7 @@ jobs:
         if: ${{ inputs.mode == 'teardown' && inputs.inspect_deployment_id != '' }}
         run: bash scripts/disposable/recovery_run.sh inspect "${{ inputs.inspect_deployment_id }}"
       - name: Download the captured bundle (artifact from the capture run)
-        if: ${{ inputs.mode == 'recover' }}
+        if: ${{ inputs.mode == 'recover' || inputs.mode == 'probe-app' }}
         uses: actions/download-artifact@v4
         with:
           name: geocore-recovery-bundle
@@ -163,7 +163,7 @@ jobs:
           echo "image built from $EXPECTED_SHA: $ref"
       - name: Probe whether Railway accepts the pinned private image (no volumes created)
         if: ${{ inputs.mode == 'probe-app' }}
-        run: bash scripts/disposable/recovery_run.sh probe-app
+        run: bash scripts/disposable/recovery_run.sh probe-app recovery-bundle.tgz
       - name: Recover on replacement infrastructure, verify, ALWAYS tear down
         if: ${{ inputs.mode == 'recover' }}
         shell: bash

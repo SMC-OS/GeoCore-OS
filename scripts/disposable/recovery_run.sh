@@ -159,19 +159,24 @@ run() {
 }
 
 
-probe_app() {  # creates NO volumes. Tests whether Railway accepts the pinned private image with registry credentials; prints runtimePick only.
-  local variant r id dep st
-  for variant in plain legacy; do
+probe_app() {  # Tests which feature makes Railway reject the pinned private image. Variant "volume" creates ONE volume that the owner must delete.
+  local variant r id dep
+  for variant in bigvars volume; do
     r="$(gql 'mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg n "probe-$variant" '{i:{projectId:$p,environmentId:$e,name:$n}}')")"
     id="$(jq -r '.data.serviceCreate.id // empty' <<<"$r")"; [[ -n "$id" ]] || { ev "probe create failed: $(gerr "$r")"; continue; }
-    local upd='{source:{image:$img},registryCredentials:{username:$u,password:$t},startCommand:"sleep 90"}'
-    [[ "$variant" == legacy ]] && upd='{source:{image:$img},registryCredentials:{username:$u,password:$t},startCommand:"sleep 90",useLegacyStacker:true}'
-    r="$(gql "mutation(\$s:String!,\$e:String!,\$img:String!,\$u:String!,\$t:String!){serviceInstanceUpdate(serviceId:\$s,environmentId:\$e,input:$upd)}" "$(jq -nc --arg s "$id" --arg e "$ENVID" --arg img "$IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,img:$img,u:$u,t:$t}')")"
+    if [[ "$variant" == bigvars ]]; then
+      local b64 n=0 off=0 part; b64="$(base64 -w0 "$1")"
+      while (( off < ${#b64} )); do part="${b64:off:30000}"; upsert_vars "$id" "$(jq -nc --arg k "$(printf 'RECOVERY_BUNDLE_PART_%03d' $n)" --arg v "$part" '{($k):$v}')" || break; off=$((off+30000)); n=$((n+1)); done
+      ev "probe[bigvars] delivered $n parts"
+    else
+      r="$(gql 'mutation($i:VolumeCreateInput!){volumeCreate(input:$i){id}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$id" '{i:{projectId:$p,environmentId:$e,serviceId:$s,mountPath:"/var/lib/simo-os/uploads"}}')")"; ev "probe[volume] volume: $(jq -r '.data.volumeCreate.id // "error"' <<<"$r" | cut -c1-8) $(gerr "$r")"
+    fi
+    r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$id" --arg e "$ENVID" --arg img "$IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,i:{source:{image:$img},registryCredentials:{username:$u,password:$t},startCommand:"sleep 90"}}')")"
     ev "probe[$variant] config: $(gerr "$r")"
     r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$id" --arg e "$ENVID" '{s:$s,e:$e}')")"
-    dep="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; ev "probe[$variant] deploy id present: $([[ -n $dep ]] && echo yes || echo "no $(gerr "$r")")"
-    sleep 45
-    [[ -n "$dep" ]] && gql 'query($i:String!){deployment(id:$i){status meta}}' "$(jq -nc --arg i "$dep" '{i:$i}')" | jq -c '{status:.data.deployment.status, runtimePick:.data.deployment.meta.runtimePick, image:.data.deployment.meta.image}' | tee -a "$EVID"
+    dep="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"
+    sleep 50
+    [[ -n "$dep" ]] && gql 'query($i:String!){deployment(id:$i){status meta}}' "$(jq -nc --arg i "$dep" '{i:$i}')" | jq -c --arg v "$variant" '{variant:$v,status:.data.deployment.status, runtimePick:.data.deployment.meta.runtimePick}' | tee -a "$EVID"
     gql 'mutation($i:String!,$e:String){serviceDelete(id:$i,environmentId:$e)}' "$(jq -nc --arg i "$id" --arg e "$ENVID" '{i:$i,e:$e}')" >/dev/null
   done
 }
@@ -180,7 +185,7 @@ case "${1:-}" in
   run) scope_guard; run "$2"; rc=$?; ev "RUN RESULT rc=$rc"; exit $rc ;;
   teardown) scope_guard; teardown ;;
   inventory) scope_guard; inventory ;;
-  probe-app) scope_guard; : "${IMAGE_REF:?}" "${REG_USER:?}" "${REG_TOKEN:?}"; probe_app ;;
+  probe-app) scope_guard; : "${IMAGE_REF:?}" "${REG_USER:?}" "${REG_TOKEN:?}"; probe_app "$2" ;;
   inspect) scope_guard; gql 'query($i:String!){deployment(id:$i){id status statusUpdatedAt createdAt canRedeploy canRollback meta}}' "$(jq -nc --arg i "$2" '{i:$i}')" | jq -c 'del(.. | .RAILWAY_TOKEN?) | .' | cut -c1-1800
     gql 'query($i:String!){deploymentEvents(id:$i,first:20){edges{node{step completedAt error}}}}' "$(jq -nc --arg i "$2" '{i:$i}')" | jq -c '.' | cut -c1-1200 ;;
   *) echo "usage: run <bundle.tgz> | teardown | inventory"; exit 64 ;;
