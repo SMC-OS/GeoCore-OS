@@ -23,6 +23,7 @@ on:
 permissions:
   contents: read
   actions: read
+  packages: write
 
 concurrency:
   group: geocore-disposable-recovery
@@ -112,7 +113,6 @@ jobs:
     env:
       RAILWAY_TOKEN: ${{ secrets.GEOCORE_DISPOSABLE_RECOVERY_RAILWAY_TOKEN }}
       EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
-      PIN_BRANCH: qa/pin-f503041
       EVID_FILE: recovery-evidence.txt
     steps:
       - uses: actions/checkout@v4
@@ -130,6 +130,30 @@ jobs:
           name: geocore-recovery-bundle
           run-id: ${{ inputs.bundle_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check out the candidate at the exact commit (separate directory)
+        if: ${{ inputs.mode == 'recover' }}
+        uses: actions/checkout@v4
+        with:
+          ref: f503041822923bd4b07a0bebaa6748ba71873740
+          path: candidate
+          persist-credentials: false
+      - name: Build the API image from exactly the candidate and publish it privately
+        if: ${{ inputs.mode == 'recover' }}
+        shell: bash
+        env:
+          GH_TOKEN_VALUE: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          set -eu -o pipefail
+          [[ "$(git -C candidate rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo "candidate checkout is not the exact commit"; exit 1; }
+          img="ghcr.io/smc-os/geocore-recovery-api"
+          echo "::add-mask::$GH_TOKEN_VALUE"
+          echo "$GH_TOKEN_VALUE" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker build --label "org.opencontainers.image.revision=$EXPECTED_SHA" -t "$img:$EXPECTED_SHA" candidate
+          docker push "$img:$EXPECTED_SHA"
+          ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$img:$EXPECTED_SHA")"
+          echo "IMAGE_REF=$ref" >> "$GITHUB_ENV"; echo "REG_USER=$GH_ACTOR" >> "$GITHUB_ENV"; echo "REG_TOKEN=$GH_TOKEN_VALUE" >> "$GITHUB_ENV"
+          echo "image built from $EXPECTED_SHA: $ref"
       - name: Recover on replacement infrastructure, verify, ALWAYS tear down
         if: ${{ inputs.mode == 'recover' }}
         shell: bash

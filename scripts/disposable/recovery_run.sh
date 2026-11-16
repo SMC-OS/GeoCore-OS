@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replacement-infrastructure recovery in the DISPOSABLE project's `recovery` environment ONLY (spend cap $3; synthetic data only).
-# usage: RAILWAY_TOKEN=<disposable recovery token> PIN_BRANCH=<branch whose head is EXPECTED_SHA> EXPECTED_SHA=<40 hex> \
+# usage: RAILWAY_TOKEN=<disposable recovery token> IMAGE_REF=<ghcr image@sha256 built from EXPECTED_SHA> REG_USER/REG_TOKEN=<short-lived registry pull credential> EXPECTED_SHA=<40 hex> \
 #        recovery_run.sh run <recovery-bundle.tgz> | teardown | inventory
 # Teardown ALWAYS runs on exit of `run` (even after a failure). Never prints a credential or a variable value.
 set -uo pipefail
@@ -25,7 +25,7 @@ scope_guard() {
 
 inventory() {  # prints counts only
   local o; o="$(gql 'query($p:String!){project(id:$p){services{edges{node{id name}}} volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
-  ev "inventory services=$(jq '[.data.project.services.edges[]]|length' <<<"$o") volumes=$(jq '[.data.project.volumes.edges[]]|length' <<<"$o") $(jq -r '[.data.project.services.edges[].node.name]|join(",")' <<<"$o")"
+  ev "inventory services=$(jq '[.data.project.services.edges[]]|length' <<<"$o") volumes=$(jq '[.data.project.volumes.edges[]]|length' <<<"$o") services:[$(jq -r '[.data.project.services.edges[].node.name]|join(",")' <<<"$o")] volumes:[$(jq -r '[.data.project.volumes.edges[].node.name]|join(",")' <<<"$o")]"
   jq -e '([.data.project.services.edges[]]|length)==0 and ([.data.project.volumes.edges[]]|length)==0' <<<"$o" >/dev/null
 }
 
@@ -35,6 +35,10 @@ teardown() {
   ev "TEARDOWN $(date -u +%FT%TZ)"
   local o id vid
   o="$(gql 'query($p:String!){project(id:$p){services{edges{node{id name}}} volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
+  for vid in $(jq -r '.data.project.volumes.edges[].node.id' <<<"$o"); do
+    r="$(gql 'mutation($v:String!){volumeDelete(volumeId:$v)}' "$(jq -nc --arg v "$vid" '{v:$v}')")"
+    ev "volume delete (attached, before service delete): $(jq -r '.data.volumeDelete // "error"' <<<"$r") $(gerr "$r")"
+  done
   for id in $(jq -r '.data.project.services.edges[].node.id' <<<"$o"); do
     r="$(gql 'mutation($i:String!,$e:String){serviceDelete(id:$i,environmentId:$e)}' "$(jq -nc --arg i "$id" --arg e "$ENVID" '{i:$i,e:$e}')")"
     ev "service delete: $(jq -r '.data.serviceDelete // "error"' <<<"$r") $(gerr "$r")"
@@ -42,14 +46,12 @@ teardown() {
   sleep 10
   o="$(gql 'query($p:String!){project(id:$p){volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
   for vid in $(jq -r '.data.project.volumes.edges[].node.id' <<<"$o"); do
-    r="$(gql 'mutation($v:String!,$e:String!){volumeInstanceDelete(volumeId:$v,environmentId:$e)}' "$(jq -nc --arg v "$vid" --arg e "$ENVID" '{v:$v,e:$e}')")"
-    ev "volume instance delete: $(jq -r '.data.volumeInstanceDelete // "error"' <<<"$r") $(gerr "$r")"
     r="$(gql 'mutation($v:String!){volumeDelete(volumeId:$v)}' "$(jq -nc --arg v "$vid" '{v:$v}')")"
     ev "volume delete: $(jq -r '.data.volumeDelete // "error"' <<<"$r") $(gerr "$r")"
   done
   sleep 10
   if inventory; then ev "TEARDOWN VERIFIED: no services and no volumes remain in the disposable project"; return 0; fi
-  ev "TEARDOWN INCOMPLETE"; return 1
+  ev "TEARDOWN INCOMPLETE: a project token is not authorised to delete volumes; the remaining volumes (names above) must be deleted by the owner in the Railway dashboard"; return 1
 }
 
 latest_dep() {  # latest_dep <service-name> -> "<id> <status> <commit>"
@@ -60,15 +62,21 @@ wait_dep() {  # wait_dep <service> <status-wanted> <timeout> [previous-deploymen
   while (( $(date +%s) < dl )); do read -r id st c < <(latest_dep "$1"); [[ -n "${4:-}" && "$id" == "$4" ]] && { sleep 10; continue; }; [[ "$st" == "$2" ]] && { echo "$id $c"; return 0; }; [[ "$st" == FAILED || "$st" == CRASHED ]] && { echo "$id $st"; return 1; }; sleep 10; done; echo "timeout"; return 1
 }
 
+wait_id() {  # wait_id <service> <deployment-id> <timeout>: that exact deployment must reach SUCCESS
+  local dl=$(( $(date +%s) + $3 )) st
+  while (( $(date +%s) < dl )); do st="$(railway deployment list --service "$1" --environment "$ENVID" --json --limit 10 2>/dev/null | jq -r --arg i "$2" '.[]|select(.id==$i)|.status')"; [[ "$st" == SUCCESS ]] && { echo "$2"; return 0; }; [[ "$st" == FAILED || "$st" == CRASHED ]] && { echo "$2 $st"; return 1; }; sleep 10; done; echo timeout; return 1
+}
+
 upsert_vars() {  # upsert_vars <service-id> <json-object>  (values never printed)
   local r; r="$(gql 'mutation($i:VariableCollectionUpsertInput!){variableCollectionUpsert(input:$i)}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$1" --argjson v "$2" '{i:{projectId:$p,environmentId:$e,serviceId:$s,variables:$v,skipDeploys:true}}')")"
   [[ "$(jq -r '.data.variableCollectionUpsert // empty' <<<"$r")" == "true" ]] || { ev "variable upsert failed: $(gerr "$r")"; return 1; }
 }
 
 run() {
-  local bundle="$1"; : "${EXPECTED_SHA:?}" "${PIN_BRANCH:?}"
+  local bundle="$1"; : "${EXPECTED_SHA:?}" "${IMAGE_REF:?}" "${REG_USER:?}" "${REG_TOKEN:?}"
   scope_guard
-  inventory >/dev/null && ev "precondition: environment is empty" || { ev "REFUSED: environment is not empty; teardown first"; return 2; }
+  [[ "$(gql 'query($p:String!){project(id:$p){services{edges{node{id}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')" | jq '[.data.project.services.edges[]]|length')" == 0 ]] && ev "precondition: no services exist (orphan volumes from earlier runs are reported below)" || { ev "REFUSED: services exist; teardown first"; return 2; }
+  inventory || true
   trap 'teardown' EXIT
   local t0=$(date +%s); ev "PROVISION START $(date -u +%FT%TZ)"
   local pw jwt seedpw; pw="$(openssl rand -hex 24)"; jwt="$(openssl rand -hex 32)"; seedpw="$(openssl rand -hex 16)"
@@ -99,7 +107,7 @@ run() {
   local vars; vars="$(jq -nc --arg db "$dburl" --arg jwt "$jwt" --arg sp "$seedpw" --arg nb "$nbytes" --arg sha "$sha" \
     '{APP_ENV:"production",DATABASE_URL:$db,JWT_SECRET_KEY:$jwt,SEED_ADMIN_EMAIL:"recovery-drill@disposable.invalid",SEED_ADMIN_PASSWORD:$sp,SEED_DATA_ENABLED:"false",
       CORS_ALLOWED_ORIGINS:"https://recovery-drill.disposable.invalid",FRONTEND_BASE_URL:"https://recovery-drill.disposable.invalid",PUBLIC_API_BASE_URL:"https://recovery-drill.disposable.invalid",
-      NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/simo-os/uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha}')"
+      RAILWAY_RUN_UID:"0",NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/simo-os/uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha}')"
   upsert_vars "$appid" "$vars" || return 1
   local n=0 off=0 chunk=30000 part
   while (( off < ${#b64} )); do part="$(printf '%s' "${b64:off:chunk}")"; upsert_vars "$appid" "$(jq -nc --arg k "$(printf 'RECOVERY_BUNDLE_PART_%03d' $n)" --arg v "$part" '{($k):$v}')" || return 1; off=$((off+chunk)); n=$((n+1)); done
@@ -109,12 +117,13 @@ run() {
   local task_start='sh -c '"'"'mkdir -p /tmp/rs && echo "$RECOVERY_SRC_B64" | base64 -d | tar -xz -C /tmp/rs && cd /app && RESTORE_SRC=/tmp/rs python /tmp/rs/scripts/disposable/restore_from_bundle.py; echo "DRILL|EXIT rc=$?"; sleep 3000'"'"''
   r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg c "$task_start" '{s:$s,e:$e,i:{startCommand:$c,healthcheckPath:null}}')")"
   [[ -z "$(gerr "$r")" ]] || { ev "task config refused: $(gerr "$r")"; return 1; }
-  r="$(gql 'mutation($i:String!,$p:ServiceConnectInput!){serviceConnect(id:$i,input:$p){id}}' "$(jq -nc --arg i "$appid" --arg repo "$REPO" --arg b "$PIN_BRANCH" '{i:$i,p:{repo:$repo,branch:$b}}')")"
-  [[ -z "$(gerr "$r")" ]] || { ev "connect refused: $(gerr "$r")"; return 1; }
-  ev "application connected to pin branch; waiting for the exact-commit build"
-  out="$(wait_dep "$APP_NAME" SUCCESS 1200)" || { ev "app task deployment failed: $out"; return 1; }
-  read -r depid depcommit <<<"$out"
-  [[ "$depcommit" == "$EXPECTED_SHA" ]] && ev "IDENTITY task deployment $depid is EXACTLY $EXPECTED_SHA" || { ev "IDENTITY MISMATCH deployed=$depcommit expected=$EXPECTED_SHA"; return 1; }
+  r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg img "$IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,i:{source:{image:$img},registryCredentials:{username:$u,password:$t}}}')")"
+  [[ -z "$(gerr "$r")" ]] || { ev "image source refused: $(gerr "$r")"; return 1; }
+  r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" '{s:$s,e:$e}')")"
+  depid="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; [[ -n "$depid" ]] || { ev "task deploy refused: $(gerr "$r")"; return 1; }
+  ev "application deploy requested from pinned image $IMAGE_REF; waiting"
+  out="$(wait_id "$APP_NAME" "$depid" 1200)" || { ev "app task deployment failed: $out"; return 1; }
+  ev "IDENTITY task deployment $depid runs image $IMAGE_REF (built from exactly $EXPECTED_SHA)"
   local dl=$(( $(date +%s) + 1500 )) logs="" rc=1
   while (( $(date +%s) < dl )); do
     logs="$(railway logs "$depid" --deployment --service "$APP_NAME" --environment "$ENVID" --lines 3000 2>&1 | tr -d '\r' | grep -a '^DRILL|' || true)"
@@ -131,10 +140,10 @@ run() {
     read -r prevapp _ _ < <(latest_dep "$APP_NAME")
     r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg c "$ORIG_START" --arg pd "$ORIG_PREDEPLOY" '{s:$s,e:$e,i:{startCommand:$c,preDeployCommand:[$pd],healthcheckPath:"/health",healthcheckTimeout:300}}')")"
     [[ -z "$(gerr "$r")" ]] || { ev "normal-start config refused: $(gerr "$r")"; rc=1; }
-    r="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")"
-    id2="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; [[ -n "$id2" ]] || { ev "pinned redeploy refused: $(gerr "$r")"; rc=1; }
+    r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" '{s:$s,e:$e}')")"
+    id2="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; [[ -n "$id2" ]] || { ev "normal-start redeploy refused: $(gerr "$r")"; rc=1; }
     if [[ -n "${id2:-}" ]]; then
-      out="$(wait_dep "$APP_NAME" SUCCESS 1200 "$prevapp")" && { read -r d2 c2 <<<"$out"; [[ "$d2" == "$id2" && "$c2" == "$EXPECTED_SHA" ]] && ev "PASS restored application under the real start command (migrate_gate at head on the restored database) and /health: deployment $d2 SUCCESS at exactly $EXPECTED_SHA" || { ev "FAIL final deployment identity ($d2 $c2)"; rc=1; }; } || { ev "FAIL restored application did not become healthy: $out"; rc=1; }
+      out="$(wait_id "$APP_NAME" "$id2" 1200)" && ev "PASS restored application under the real start command (migrate_gate at head on the restored database) and /health: deployment $id2 SUCCESS, image $IMAGE_REF" || { ev "FAIL restored application did not become healthy: $out"; rc=1; }
     fi
   fi
   ev "RECOVERY ELAPSED_TOTAL_SECONDS=$(( $(date +%s) - t0 )) (excludes teardown)"
