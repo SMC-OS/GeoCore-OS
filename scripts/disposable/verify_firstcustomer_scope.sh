@@ -3,6 +3,7 @@
 # `first-customer` that is neither the recovery environment nor any existing QA/production identifier. Prints ids (not secrets).
 set -uo pipefail
 EXP_PROJECT=482d0eff-ecd3-4457-8834-e0b49e897e42
+EXP_ENV=c85bcb0c-9b82-45a6-90f7-67793520d8a6
 FORBIDDEN=(43eadd7f-40be-4cdf-acb8-e1a8b33ba3b8 a16eaf0a-b5a5-4e8e-b79e-4d191457638e f948241d-446f-43ed-bff0-5d12decffd50)
 [[ -n "${RAILWAY_TOKEN:-}" ]] || { echo "BLOCKED: GEOCORE_DISPOSABLE_FIRSTCUSTOMER_RAILWAY_TOKEN is missing or empty (owner action)"; exit 3; }
 gql() { curl -sS --max-time 40 https://backboard.railway.com/graphql/v2 -H "Project-Access-Token: $RAILWAY_TOKEN" -H 'Content-Type: application/json' -d "$1"; }
@@ -11,6 +12,7 @@ pid="$(jq -r '.data.projectToken.projectId // empty' <<<"$scope")"; eid="$(jq -r
 [[ -n "$pid" && -n "$eid" ]] || { echo "FAIL: not a project token (no scope returned)"; exit 1; }
 rc=0
 [[ "$pid" == "$EXP_PROJECT" ]] && echo "PASS project id is the disposable project" || { echo "FAIL project id is not the disposable project"; rc=1; }
+[[ "$eid" == "$EXP_ENV" ]] && echo "PASS environment id equals the owner-stated first-customer environment" || { echo "FAIL environment id is not the owner-stated first-customer environment"; rc=1; }
 for f in "${FORBIDDEN[@]}"; do [[ "$eid" == "$f" || "$pid" == "$f" ]] && { echo "FAIL token scope is a forbidden identifier (recovery/QA)"; rc=1; }; done
 export RAILWAY_TOKEN
 status="$(railway status --json 2>/dev/null)" || { echo "FAIL railway status failed"; exit 1; }
