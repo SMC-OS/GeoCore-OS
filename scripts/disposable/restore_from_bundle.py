@@ -1,7 +1,7 @@
 """Replacement-infrastructure restore + verification (runs INSIDE the disposable application container; synthetic data only).
 
 Inputs (environment, set by the disposable provisioning workflow; no source credential and no source address is ever present):
-  RECOVERY_BUNDLE_PART_000.. : base64 chunks of the captured tar.gz bundle      RECOVERY_BUNDLE_SHA256 / RECOVERY_BUNDLE_BYTES : outer integrity
+  RECOVERY_BUNDLE_PATH       : the captured tar.gz bundle baked into the recovery task image      RECOVERY_BUNDLE_SHA256 / RECOVERY_BUNDLE_BYTES : outer integrity
   DATABASE_URL               : the NEW independent PostgreSQL 18 (private network)  UPLOAD_DIR : the NEW independent private-upload volume
   RESTORE_SRC                : unpacked recovery tooling (scripts/qa, scripts/recovery, scripts/disposable)
 Everything printed starts with "DRILL|". Exit code 0 only when every check passed.
@@ -18,9 +18,9 @@ say, check, cf, rub = d.say, d.check, d.cf, d.rub
 
 
 def assemble():
-    parts = sorted(k for k in os.environ if re.fullmatch(r"RECOVERY_BUNDLE_PART_\d{3}", k))
-    blob = base64.b64decode("".join(os.environ[k] for k in parts)) if parts else b""
-    check("bundle parts present", len(parts) > 0, f"{len(parts)} parts")
+    path = Path(os.environ.get("RECOVERY_BUNDLE_PATH", "/recovery/bundle.tgz"))
+    blob = path.read_bytes() if path.is_file() else b""
+    check("bundle file present in the recovery task image", len(blob) > 0, str(path))
     check("bundle byte count equals the captured size", len(blob) == int(os.environ.get("RECOVERY_BUNDLE_BYTES", "-1")), f"{len(blob)}")
     check("bundle SHA-256 equals the captured digest", hashlib.sha256(blob).hexdigest() == os.environ.get("RECOVERY_BUNDLE_SHA256", ""))
     return blob

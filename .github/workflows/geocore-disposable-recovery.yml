@@ -159,6 +159,12 @@ jobs:
           docker build --label "org.opencontainers.image.revision=$EXPECTED_SHA" --label "org.opencontainers.image.source=https://github.com/SMC-OS/GeoCore-OS" -t "$img:$EXPECTED_SHA" candidate
           docker push "$img:$EXPECTED_SHA"
           ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$img:$EXPECTED_SHA")"
+          if [[ -f recovery-bundle.tgz ]]; then
+            mkdir taskctx && cp recovery-bundle.tgz taskctx/ && printf 'FROM %s\nCOPY recovery-bundle.tgz /recovery/bundle.tgz\n' "$ref" > taskctx/Dockerfile
+            docker build -t "ghcr.io/smc-os/geocore-recovery-task:$GITHUB_RUN_ID" taskctx
+            docker push "ghcr.io/smc-os/geocore-recovery-task:$GITHUB_RUN_ID"
+            echo "TASK_IMAGE_REF=$(docker inspect --format '{{index .RepoDigests 0}}' "ghcr.io/smc-os/geocore-recovery-task:$GITHUB_RUN_ID")" >> "$GITHUB_ENV"
+          fi
           echo "IMAGE_REF=$ref" >> "$GITHUB_ENV"; echo "REG_USER=$GH_ACTOR" >> "$GITHUB_ENV"; echo "REG_TOKEN=$GH_TOKEN_VALUE" >> "$GITHUB_ENV"
           echo "image built from $EXPECTED_SHA: $ref"
       - name: Probe whether Railway accepts the pinned private image (no volumes created)

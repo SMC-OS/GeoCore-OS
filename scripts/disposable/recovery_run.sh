@@ -81,7 +81,7 @@ upsert_vars() {  # upsert_vars <service-id> <json-object>  (values never printed
 }
 
 run() {
-  local bundle="$1"; : "${EXPECTED_SHA:?}" "${IMAGE_REF:?}" "${REG_USER:?}" "${REG_TOKEN:?}"
+  local bundle="$1"; : "${EXPECTED_SHA:?}" "${IMAGE_REF:?}" "${TASK_IMAGE_REF:?}" "${REG_USER:?}" "${REG_TOKEN:?}"
   scope_guard
   [[ "$(gql 'query($p:String!){project(id:$p){services{edges{node{id}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')" | jq '[.data.project.services.edges[]]|length')" == 0 ]] && ev "precondition: no services exist (orphan volumes from earlier runs are reported below)" || { ev "REFUSED: services exist; teardown first"; return 2; }
   inventory || true
@@ -115,23 +115,21 @@ run() {
   local vars; vars="$(jq -nc --arg db "$dburl" --arg jwt "$jwt" --arg sp "$seedpw" --arg nb "$nbytes" --arg sha "$sha" \
     '{APP_ENV:"production",DATABASE_URL:$db,JWT_SECRET_KEY:$jwt,SEED_ADMIN_EMAIL:"recovery-drill@disposable.invalid",SEED_ADMIN_PASSWORD:$sp,SEED_DATA_ENABLED:"false",
       CORS_ALLOWED_ORIGINS:"https://recovery-drill.disposable.invalid",FRONTEND_BASE_URL:"https://recovery-drill.disposable.invalid",PUBLIC_API_BASE_URL:"https://recovery-drill.disposable.invalid",
-      RAILWAY_RUN_UID:"0",NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/simo-os/uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha}')"
+      RAILWAY_RUN_UID:"0",NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/simo-os/uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha,RECOVERY_BUNDLE_PATH:"/recovery/bundle.tgz"}')"
   upsert_vars "$appid" "$vars" || return 1
-  local n=0 off=0 chunk=30000 part
-  while (( off < ${#b64} )); do part="$(printf '%s' "${b64:off:chunk}")"; upsert_vars "$appid" "$(jq -nc --arg k "$(printf 'RECOVERY_BUNDLE_PART_%03d' $n)" --arg v "$part" '{($k):$v}')" || return 1; off=$((off+chunk)); n=$((n+1)); done
-  ev "bundle delivered as $n variable parts ($nbytes bytes, sha256 ${sha:0:16}...)"
+  ev "bundle ($nbytes bytes, sha256 ${sha:0:16}...) is delivered inside the recovery task image $TASK_IMAGE_REF"
   tar -czf /tmp/restore-src.tgz scripts/qa/qa_recovery_drill.py scripts/recovery/content_fingerprint.py scripts/recovery/matched_bundle.py scripts/recovery/restore_upload_bundle.py scripts/recovery/recovery_safety.py scripts/disposable/restore_from_bundle.py scripts/disposable/bundle_transfer.py
   upsert_vars "$appid" "$(jq -nc --arg v "$(base64 -w0 /tmp/restore-src.tgz)" '{RECOVERY_SRC_B64:$v}')" || return 1
   local task_start='sh -c '"'"'mkdir -p /tmp/rs && echo "$RECOVERY_SRC_B64" | base64 -d | tar -xz -C /tmp/rs && cd /app && RESTORE_SRC=/tmp/rs python /tmp/rs/scripts/disposable/restore_from_bundle.py; echo "DRILL|EXIT rc=$?"; sleep 3000'"'"''
   r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg c "$task_start" '{s:$s,e:$e,i:{startCommand:$c,healthcheckPath:null}}')")"
   [[ -z "$(gerr "$r")" ]] || { ev "task config refused: $(gerr "$r")"; return 1; }
-  r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg img "$IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,i:{source:{image:$img},registryCredentials:{username:$u,password:$t}}}')")"
+  r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg img "$TASK_IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,i:{source:{image:$img},registryCredentials:{username:$u,password:$t}}}')")"
   [[ -z "$(gerr "$r")" ]] || { ev "image source refused: $(gerr "$r")"; return 1; }
   r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" '{s:$s,e:$e}')")"
   depid="$(jq -r '.data.serviceInstanceDeployV2 // empty' <<<"$r")"; [[ -n "$depid" ]] || { ev "task deploy refused: $(gerr "$r")"; return 1; }
-  ev "application deploy requested from pinned image $IMAGE_REF; waiting"
+  ev "application deploy requested from recovery task image $TASK_IMAGE_REF (candidate $IMAGE_REF + the captured bundle); waiting"
   out="$(wait_id "$APP_NAME" "$depid" 1200)" || { ev "app task deployment failed: $out"; diag "$APP_NAME" "$depid"; return 1; }
-  ev "IDENTITY task deployment $depid runs image $IMAGE_REF (built from exactly $EXPECTED_SHA)"
+  ev "IDENTITY task deployment $depid runs $TASK_IMAGE_REF layered on candidate image $IMAGE_REF (built from exactly $EXPECTED_SHA)"
   local dl=$(( $(date +%s) + 1500 )) logs="" rc=1
   while (( $(date +%s) < dl )); do
     logs="$(railway logs "$depid" --deployment --service "$APP_NAME" --environment "$ENVID" --lines 3000 2>&1 | tr -d '\r' | grep -a '^DRILL|' || true)"
@@ -146,6 +144,8 @@ run() {
   # ---- phase 2: the restored application under its REAL start command and health check, same commit, restored database + volume
   if [[ $rc -eq 0 ]]; then
     read -r prevapp _ _ < <(latest_dep "$APP_NAME")
+    r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg img "$IMAGE_REF" '{s:$s,e:$e,i:{source:{image:$img}}}')")"
+    [[ -z "$(gerr "$r")" ]] || { ev "switch to the pure candidate image refused: $(gerr "$r")"; rc=1; }
     r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" --arg c "$ORIG_START" --arg pd "$ORIG_PREDEPLOY" '{s:$s,e:$e,i:{startCommand:$c,preDeployCommand:[$pd],healthcheckPath:"/health",healthcheckTimeout:300}}')")"
     [[ -z "$(gerr "$r")" ]] || { ev "normal-start config refused: $(gerr "$r")"; rc=1; }
     r="$(gql 'mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e)}' "$(jq -nc --arg s "$appid" --arg e "$ENVID" '{s:$s,e:$e}')")"
