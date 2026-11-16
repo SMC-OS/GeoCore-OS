@@ -90,7 +90,7 @@ Workflow design (to be implemented only after the prerequisites exist, to avoid 
 6. Reply with: decline shown (yes/no), success redirect (yes/no), workspace active (yes/no), and the two screenshots. Do not send any password or link.
 Only test cards. Nothing real is charged. About 15 minutes.
 
-## 4. Replacement-infrastructure recovery (doc 21 §B9 made concrete; NOT provisioned)
+## 4. Replacement-infrastructure recovery (doc 21 §B9 made concrete) — EXECUTED 16 Nov: restore PASS, teardown INCOMPLETE
 
 Smallest safe exercise proving recovery onto independent infrastructure, synthetic data only:
 1. Capture from isolated QA with the hardened drill machinery: custom-format dump, matched uploads bundle, manifests, SHA-256 of every file and of the bundle, T0/T1 fingerprints, recovery point timestamp, expected revision `c7d8e9f0a1b2`. Store the bundle outside the source environment (runner artifact, retention 1 day) together with its integrity record.
@@ -152,3 +152,21 @@ Conclusion: reuse the shell and tooling, not the data stores. Two separate short
 | Replacement-infrastructure recovery | NOT EXECUTED (section 4) |
 | First-customer acceptance | NOT EXECUTED (section 2) |
 | Production readiness | NOT VERIFIED; HOLD / NO-GO |
+
+### 4.2 Result of the execution (16 Nov, disposable project geocore-disposable-qa-7f3c9a2e81, environment `recovery`, run 43783158019)
+| Check | Result |
+|---|---|
+| Token scope = disposable project + `recovery` environment only | PASS (run 43750894509 and every later run) |
+| Bundle SHA-256, dump, uploads archive and manifest vs integrity record; matched capture T0 = T1 | PASS |
+| New PostgreSQL 18, independent volume, starts empty; `pg_restore` | PASS |
+| Migration revision exactly `c7d8e9f0a1b2`; database fingerprint (rows, content hash, alembic) equals capture; per-tenant counts equal | PASS |
+| 34 uploads byte-identical (SHA-256, size, path); every document row has its file with the recorded size | PASS |
+| Restored application ready; two tenants download own documents (hash = manifest); cross-tenant 404 both ways; anonymous refused; list isolation | PASS |
+| Restored application under the real start command (migrate_gate) and `/health`, candidate image | PASS |
+| Timing | provision to verified 41 s; DB restore 1.0 s; uploads 0.1 s; verification 2.6 s; whole run 75 s (excludes teardown) |
+| Recovery point | 15 Nov 19:21 UTC (logical dump; no PITR/WAL) |
+| Teardown: services | deleted |
+| Teardown: volumes | **NOT deleted: a Railway project token is not authorised to delete volumes. 11 volumes remain (synthetic/empty).** |
+| Actual spend | not yet measured; runs lasted minutes with tiny resources; owner to confirm in the Railway usage page (cap $3) |
+
+Findings that change the plan: (1) a project token cannot connect a repository, so the application ran from a private image built in Actions from a checkout of exactly `f503041` (identity: image built from that commit); (2) Railway rejected ~1.4 MB of variables, so the bundle travels in a data-layer image; (3) the restore tool correctly refuses a target under `/var/lib/simo-os/uploads`, so the independent volume is mounted elsewhere; (4) volumes need owner deletion — **owner action: delete every volume in the disposable project, then dispatch workflow mode `teardown` to verify emptiness.** Until then REPLACEMENT-INFRA-RECOVERY stays BLOCKED in the ledger and the first-customer environment must not be provisioned.

@@ -979,10 +979,12 @@
         "isolated_qa"
       ],
       "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
-      "evidence": [],
+      "evidence": [
+        "GitHub Actions run 43783158019 (job 133024762526), 16 Nov: restore onto replacement infrastructure PASS; evidence artifact geocore-recovery-evidence (run 43783158019); matched bundle from capture run 43751882963, sha256 of the bundle 5ea124d3f9b7b5ae..., recovery point 2026-11-15T19:21:27Z"
+      ],
       "status": "BLOCKED",
       "owner": "Owner (approval for paid resources)",
-      "remaining": "NOT EXECUTED. Exercise specified in doc 22 section 4 (new PostgreSQL 18 + empty volume, restore from bundle and integrity record only, two-tenant retrieval, timing, teardown); estimated about $0.30-$1.40, cap $3 proposed; needs owner approval. Do not share data stores with the first-customer environment (doc 22 section 4.1). OWNER APPROVAL RECORDED 15 Nov (chat: 'approve both caps'): first-customer cap $10, recovery cap $3. Still needed before provisioning: owner-created disposable Railway project and per-environment tokens, usage alert, confirmed test mailbox and sandbox Stripe/Resend setup (doc 22 section 0).",
+      "remaining": "Functional recovery EXECUTED AND PASSED (run 43783158019, disposable project geocore-disposable-qa-7f3c9a2e81, environment recovery): new PostgreSQL 18 + independent volume, candidate image built at exactly f503041, restore from the bundle and integrity record only; migration c7d8e9f0a1b2; database fingerprint (every table, content hash, alembic) equals the capture; 34 uploads byte-identical; per-tenant counts equal; every document row has its file; restored application ready; two-tenant authenticated retrieval PASS; cross-tenant 404 both ways; anonymous refused; restored app also healthy under the real start command. Timing: provision to verified 41 s, restore 1.0 s DB + 0.1 s uploads, verification 2.6 s, total 75 s (excludes teardown). Recovery point 15 Nov 19:21 UTC (logical dump; no PITR). GATE NOT CLOSED: teardown is INCOMPLETE. Services were deleted but a Railway project token cannot delete volumes ('Not Authorized'); 11 empty-or-synthetic volumes remain in the disposable project (rec-pg-volume*, rec-app-volume*, probe-volume-volume). OWNER ACTION: delete all volumes in the disposable project dashboard (or provide a token that can), then run workflow mode 'teardown' to verify nothing remains. Actual spend not yet measured from the Railway invoice (runs lasted a few minutes; confirm in the dashboard). Application image was delivered as a private ghcr image (project tokens cannot connect a repository), identity = image built from checkout of exactly f503041; the first attempts failed on platform limits (repository connect, ~1.4 MB variables) and are recorded in the commit history of qa/disposable-recovery.",
       "blocks_initial_release": true
     },
     {
