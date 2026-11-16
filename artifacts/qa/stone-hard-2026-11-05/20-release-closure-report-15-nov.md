@@ -257,3 +257,50 @@ The container-task restoration helper restored configuration but left the servic
 - **Owner acceptance pack and provisioning specifications: doc 22.** Nothing was provisioned, no paid resource was created, admission was not opened, no owner approval, mailbox receipt, legal acceptance or alert delivery is assumed.
 - Design fact recorded: admission is a binary `open|closed` switch with no per-identity allowlist, so the first-customer environment must be restricted by isolation, not by the application (doc 22 section 2.1).
 - Verdict unchanged: **HOLD / NO-GO**. Remaining sequence: doc 22 section 6.
+
+## Replacement-infrastructure recovery — acceptance record (16 Nov)
+
+**Recovery gate: restore and application checks PASS (run 43783158019, tooling commit 794c0b1e). Cleanup gate: OPEN. Cost reconciliation: OPEN. Verdict stays HOLD / NO-GO.**
+
+Scope: this proves restoration of a matched synthetic database and uploads bundle onto *replacement infrastructure* (new PostgreSQL 18, new volume, application image built from exactly `f503041`). It does not prove production disaster recovery, PITR, or recovery of the production database.
+
+Verified from the execution log (not summary): bundle size and SHA-256; dump, uploads archive, manifest and integrity record checksums; matched T0 = T1 capture; empty replacement database; `pg_restore`; migration exactly `c7d8e9f0a1b2`; database fingerprint (every table's rows and content hash, alembic) equal to the capture; row total and per-tenant counts equal; all 34 uploads byte-identical (path, size, SHA-256); every document row has its file with the recorded size; restored application ready; tenant A and tenant B authenticated retrieval with bytes equal to the manifest hash; cross-tenant 404 in both directions; anonymous request refused; tenant-scoped document lists; the restored application also healthy under the real start command and `/health`. "sequences present=0" in the log is a count of `pg_sequences`; sequence values (where any exist) are covered by the database fingerprint, so no separate sequence claim is made.
+
+Timings: provisioning to first verified retrieval 41 s; database restore 1.0 s; uploads restore 0.1 s; verification 2.6 s; whole run 75 s (excludes teardown). Recovery point 2026-11-15 19:21 UTC (logical dump; data after that instant is not recoverable).
+
+The workflow run shows `failure` overall because the final emptiness step fails while volumes remain; the recovery step itself concluded `success`.
+
+### Attempts (all recovery-related runs; no further recovery run will be dispatched)
+| Run | Purpose | Outcome |
+|---|---|---|
+| 43751882963 | Capture in isolated QA | success (bundle artifact) |
+| 43779884919 | First provision | failed: project token cannot connect a repository |
+| 43780335001 | Teardown | volumes cannot be deleted by a project token |
+| 43780457231, 43781015450 | Provision from private image | failed: platform rejected the deployment |
+| 43781520455 | Read-only deployment inspection | showed runtime pick `unsupported_feature` |
+| 43781795834, 43782185672 | Volume-free probes | image accepted; ~1.4 MB of variables rejected |
+| 43782663691 | Recovery with bundle in image | restore PASS; uploads refused the protected active-upload path (by design) |
+| 43783158019 | Recovery, volume at `/var/lib/recovery-uploads` | **all checks PASS** |
+
+### Cleanup state (read-only inventory, run 43784134269)
+Services 0. Staged changes: none returned. Buckets: the read query was not valid for this token (my query error), so **buckets are not yet confirmed zero**; ChatGPT/owner to confirm. No recovery workflow is active. Volumes remaining (11) — a project token is not authorised to delete them; deletion is left to the owner or ChatGPT's connected Railway account:
+
+| Volume ID | Name |
+|---|---|
+| 0e609a57-ab6f-4774-ae9f-36aa266727e9 | rec-app-volume-HZUm |
+| 1024a89c-d735-45de-a8ab-391a158abf65 | rec-pg-volume-asfu |
+| 129168ba-ddb3-477d-8013-6783d31604be | rec-app-volume |
+| 682b1ed7-a59a-4fc3-95c7-96d1cf903739 | rec-pg-volume |
+| 682c70de-33ee-4d09-9498-27b28f920b4b | rec-pg-volume--oDX |
+| 7cc2e16e-f938-4b5f-8d68-79a7c8f8409e | probe-volume-volume |
+| adfd2c31-f4d3-4c6b-8bf5-bc2710487292 | rec-app-volume-ShzU |
+| bc66f5bb-d9ca-4def-83e1-fb6688f0d575 | rec-pg-volume-aKbZ |
+| d3015d38-845e-40d2-bb35-4e67e864aa1b | rec-app-volume-uHrU |
+| d9be319e-6da0-43a9-b5ab-847ee488cb1c | rec-pg-volume-pAlJ |
+| f25458d5-f5fb-442b-9967-74aa168d23bb | rec-app-volume-Xdkt |
+
+### Cost reconciliation — OPEN
+A project token cannot read billing. Estimate only: all services together lived about 20 service-minutes across the attempts (negligible compute). Orphaned volumes are the uncertain item: if billed on provisioned size they accrue continuously until deleted. Do not treat the cap as respected until the Railway usage page for the disposable project is read; the owner or ChatGPT should record the actual incremental total. Nothing further is provisioned until that is done.
+
+### Next, in order
+1. Delete the 11 volumes above (and confirm no buckets) with the connected Railway account. 2. Dispatch workflow mode `inventory` for the final read-only check: zero services, zero volumes, zero buckets, zero staged changes. 3. Record actual spend. 4. Only then close teardown and prepare the first-customer environment.
