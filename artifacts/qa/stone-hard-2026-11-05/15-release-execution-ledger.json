@@ -980,7 +980,10 @@
       ],
       "sha": "f503041822923bd4b07a0bebaa6748ba71873740",
       "evidence": [
-        "GitHub Actions run 43783158019 (job 133024762526), 16 Nov: restore onto replacement infrastructure PASS; evidence artifact geocore-recovery-evidence (run 43783158019); matched bundle from capture run 43751882963, sha256 of the bundle 5ea124d3f9b7b5ae..., recovery point 2026-11-15T19:21:27Z"
+        {
+          "env": "isolated_qa",
+          "what": "Run 43783158019 (job 133024762526), 16 Nov: restore onto replacement infrastructure PASS (new PostgreSQL 18 + independent volume, candidate image built at exactly f503041, bundle sha256 5ea124d3f9b7b5ae..., captured by run 43751882963, recovery point 2026-11-15T19:21Z). Evidence artifact geocore-recovery-evidence. Teardown INCOMPLETE (volumes)."
+        }
       ],
       "status": "BLOCKED",
       "owner": "Owner (approval for paid resources)",
