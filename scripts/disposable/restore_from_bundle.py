@@ -64,7 +64,7 @@ def main():
     check("pg_restore into the independent PostgreSQL succeeded", rr.returncode == 0, rr.stderr.strip()[:200])
     db_s = time.time() - r0
 
-    uploads_root = Path(os.environ["UPLOAD_DIR"])
+    uploads_root = Path(os.environ.get("RECOVERY_VOLUME", "/var/lib/recovery-uploads"))
     scratch = uploads_root / "restored-private-uploads"
     scratch.mkdir(parents=True, exist_ok=False)
     u0 = time.time()

@@ -108,14 +108,14 @@ run() {
   local appid
   r="$(gql 'mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id name}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg n "$APP_NAME" '{i:{projectId:$p,environmentId:$e,name:$n}}')")"
   appid="$(jq -r '.data.serviceCreate.id // empty' <<<"$r")"; [[ -n "$appid" ]] || { ev "app create failed: $(gerr "$r")"; return 1; }
-  r="$(gql 'mutation($i:VolumeCreateInput!){volumeCreate(input:$i){id name}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$appid" '{i:{projectId:$p,environmentId:$e,serviceId:$s,mountPath:"/var/lib/simo-os/uploads"}}')")"
+  r="$(gql 'mutation($i:VolumeCreateInput!){volumeCreate(input:$i){id name}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$appid" '{i:{projectId:$p,environmentId:$e,serviceId:$s,mountPath:"/var/lib/recovery-uploads"}}')")"
   [[ -n "$(jq -r '.data.volumeCreate.id // empty' <<<"$r")" ]] || { ev "uploads volume failed: $(gerr "$r")"; return 1; }
   local dburl="postgresql+psycopg://postgres:${pw}@${PG_NAME}.railway.internal:5432/railway"
   local b64; b64="$(base64 -w0 "$bundle")"; local nbytes; nbytes="$(stat -c %s "$bundle")"; local sha; sha="$(sha256sum "$bundle" | cut -d' ' -f1)"
   local vars; vars="$(jq -nc --arg db "$dburl" --arg jwt "$jwt" --arg sp "$seedpw" --arg nb "$nbytes" --arg sha "$sha" \
     '{APP_ENV:"production",DATABASE_URL:$db,JWT_SECRET_KEY:$jwt,SEED_ADMIN_EMAIL:"recovery-drill@disposable.invalid",SEED_ADMIN_PASSWORD:$sp,SEED_DATA_ENABLED:"false",
       CORS_ALLOWED_ORIGINS:"https://recovery-drill.disposable.invalid",FRONTEND_BASE_URL:"https://recovery-drill.disposable.invalid",PUBLIC_API_BASE_URL:"https://recovery-drill.disposable.invalid",
-      RAILWAY_RUN_UID:"0",NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/simo-os/uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha,RECOVERY_BUNDLE_PATH:"/recovery/bundle.tgz"}')"
+      RAILWAY_RUN_UID:"0",NEW_ACCOUNT_ADMISSION:"closed",READINESS_TIMEOUT_SECONDS:"2",PORT:"8000",UPLOAD_DIR:"/var/lib/recovery-uploads/restored-private-uploads",RECOVERY_VOLUME:"/var/lib/recovery-uploads",RECOVERY_BUNDLE_BYTES:$nb,RECOVERY_BUNDLE_SHA256:$sha,RECOVERY_BUNDLE_PATH:"/recovery/bundle.tgz"}')"
   upsert_vars "$appid" "$vars" || return 1
   ev "bundle ($nbytes bytes, sha256 ${sha:0:16}...) is delivered inside the recovery task image $TASK_IMAGE_REF"
   tar -czf /tmp/restore-src.tgz scripts/qa/qa_recovery_drill.py scripts/recovery/content_fingerprint.py scripts/recovery/matched_bundle.py scripts/recovery/restore_upload_bundle.py scripts/recovery/recovery_safety.py scripts/disposable/restore_from_bundle.py scripts/disposable/bundle_transfer.py
@@ -169,7 +169,7 @@ probe_app() {  # Tests which feature makes Railway reject the pinned private ima
       while (( off < ${#b64} )); do part="${b64:off:30000}"; upsert_vars "$id" "$(jq -nc --arg k "$(printf 'RECOVERY_BUNDLE_PART_%03d' $n)" --arg v "$part" '{($k):$v}')" || break; off=$((off+30000)); n=$((n+1)); done
       ev "probe[bigvars] delivered $n parts"
     else
-      r="$(gql 'mutation($i:VolumeCreateInput!){volumeCreate(input:$i){id}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$id" '{i:{projectId:$p,environmentId:$e,serviceId:$s,mountPath:"/var/lib/simo-os/uploads"}}')")"; ev "probe[volume] volume: $(jq -r '.data.volumeCreate.id // "error"' <<<"$r" | cut -c1-8) $(gerr "$r")"
+      r="$(gql 'mutation($i:VolumeCreateInput!){volumeCreate(input:$i){id}}' "$(jq -nc --arg p "$PROJ" --arg e "$ENVID" --arg s "$id" '{i:{projectId:$p,environmentId:$e,serviceId:$s,mountPath:"/var/lib/recovery-uploads"}}')")"; ev "probe[volume] volume: $(jq -r '.data.volumeCreate.id // "error"' <<<"$r" | cut -c1-8) $(gerr "$r")"
     fi
     r="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$s,environmentId:$e,input:$i)}' "$(jq -nc --arg s "$id" --arg e "$ENVID" --arg img "$IMAGE_REF" --arg u "$REG_USER" --arg t "$REG_TOKEN" '{s:$s,e:$e,i:{source:{image:$img},registryCredentials:{username:$u,password:$t},startCommand:"sleep 90"}}')")"
     ev "probe[$variant] config: $(gerr "$r")"
