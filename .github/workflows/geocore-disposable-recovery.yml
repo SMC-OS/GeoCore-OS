@@ -8,16 +8,21 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "verify (read-only disposable token scope check) | probe-qa-template (read-only) | capture (QA container task: matched capture, emits the verified bundle; ends with exact-SHA QA restoration)"
+        description: "verify (read-only disposable token scope check) | probe-qa-template (read-only) | capture (QA container task: matched capture, emits the verified bundle; ends with exact-SHA QA restoration) | recover (provision, restore from the bundle only, verify, ALWAYS tear down) | teardown (verify/force empty)"
         type: choice
-        options: [verify, probe-qa-template, capture]
+        options: [verify, probe-qa-template, capture, recover, teardown]
         default: verify
+      bundle_run_id:
+        description: "recover: workflow run id that produced the geocore-recovery-bundle artifact"
+        type: string
+        default: ""
   push:
     branches: [qa/disposable-recovery]
     paths: ['.github/workflows/geocore-disposable-recovery.yml']
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: geocore-disposable-recovery
@@ -25,7 +30,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' }}
+    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' && inputs.mode != 'recover' && inputs.mode != 'teardown' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -99,3 +104,47 @@ jobs:
             recovery-bundle.sha256
           retention-days: 1
           if-no-files-found: warn
+
+  recover:
+    if: ${{ inputs.mode == 'recover' || inputs.mode == 'teardown' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_DISPOSABLE_RECOVERY_RAILWAY_TOKEN }}
+      EXPECTED_SHA: f503041822923bd4b07a0bebaa6748ba71873740
+      PIN_BRANCH: qa/pin-f503041
+      EVID_FILE: recovery-evidence.txt
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Disposable token scope (must be exactly the disposable project and recovery environment)
+        run: bash scripts/disposable/verify_token_scope.sh 482d0eff-ecd3-4457-8834-e0b49e897e42 43eadd7f-40be-4cdf-acb8-e1a8b33ba3b8 recovery
+      - name: Teardown / verify empty
+        if: ${{ inputs.mode == 'teardown' }}
+        run: bash scripts/disposable/recovery_run.sh teardown
+      - name: Download the captured bundle (artifact from the capture run)
+        if: ${{ inputs.mode == 'recover' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: geocore-recovery-bundle
+          run-id: ${{ inputs.bundle_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Recover on replacement infrastructure, verify, ALWAYS tear down
+        if: ${{ inputs.mode == 'recover' }}
+        shell: bash
+        run: |
+          set -u -o pipefail
+          [[ "$(sha256sum recovery-bundle.tgz | cut -d' ' -f1)" == "$(cat recovery-bundle.sha256)" ]] || { echo "bundle digest mismatch"; exit 1; }
+          bash scripts/disposable/recovery_run.sh run recovery-bundle.tgz
+      - name: Retain redacted recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-recovery-evidence
+          path: recovery-evidence.txt
+          retention-days: 30
+          if-no-files-found: ignore
+      - name: Final emptiness check (always)
+        if: always()
+        run: bash scripts/disposable/recovery_run.sh inventory
