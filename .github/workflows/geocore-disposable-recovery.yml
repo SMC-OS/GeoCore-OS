@@ -10,7 +10,7 @@ on:
       mode:
         description: "verify (read-only disposable token scope check) | probe-qa-template (read-only) | capture (QA container task: matched capture, emits the verified bundle; ends with exact-SHA QA restoration) | recover (provision, restore from the bundle only, verify, ALWAYS tear down) | teardown (verify/force empty)"
         type: choice
-        options: [verify, probe-qa-template, capture, recover, teardown]
+        options: [verify, probe-qa-template, capture, recover, teardown, probe-app]
         default: verify
       inspect_deployment_id:
         description: "teardown mode: also print the status/meta of this deployment id (read-only)"
@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' && inputs.mode != 'recover' && inputs.mode != 'teardown' }}
+    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' && inputs.mode != 'recover' && inputs.mode != 'teardown' && inputs.mode != 'probe-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -111,7 +111,7 @@ jobs:
           if-no-files-found: warn
 
   recover:
-    if: ${{ inputs.mode == 'recover' || inputs.mode == 'teardown' }}
+    if: ${{ inputs.mode == 'recover' || inputs.mode == 'teardown' || inputs.mode == 'probe-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -138,14 +138,14 @@ jobs:
           run-id: ${{ inputs.bundle_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Check out the candidate at the exact commit (separate directory)
-        if: ${{ inputs.mode == 'recover' }}
+        if: ${{ inputs.mode == 'recover' || inputs.mode == 'probe-app' }}
         uses: actions/checkout@v4
         with:
           ref: f503041822923bd4b07a0bebaa6748ba71873740
           path: candidate
           persist-credentials: false
       - name: Build the API image from exactly the candidate and publish it privately
-        if: ${{ inputs.mode == 'recover' }}
+        if: ${{ inputs.mode == 'recover' || inputs.mode == 'probe-app' }}
         shell: bash
         env:
           GH_TOKEN_VALUE: ${{ secrets.GITHUB_TOKEN }}
@@ -161,6 +161,9 @@ jobs:
           ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$img:$EXPECTED_SHA")"
           echo "IMAGE_REF=$ref" >> "$GITHUB_ENV"; echo "REG_USER=$GH_ACTOR" >> "$GITHUB_ENV"; echo "REG_TOKEN=$GH_TOKEN_VALUE" >> "$GITHUB_ENV"
           echo "image built from $EXPECTED_SHA: $ref"
+      - name: Probe whether Railway accepts the pinned private image (no volumes created)
+        if: ${{ inputs.mode == 'probe-app' }}
+        run: bash scripts/disposable/recovery_run.sh probe-app
       - name: Recover on replacement infrastructure, verify, ALWAYS tear down
         if: ${{ inputs.mode == 'recover' }}
         shell: bash
