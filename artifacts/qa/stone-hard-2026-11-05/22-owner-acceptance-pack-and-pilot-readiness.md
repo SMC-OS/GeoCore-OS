@@ -217,3 +217,6 @@ A project token cannot read billing. Estimate only: all services together lived 
 
 ### Next, in order
 1. Delete the 11 volumes above (and confirm no buckets) with the connected Railway account. 2. Dispatch workflow mode `inventory` for the final read-only check: zero services, zero volumes, zero buckets, zero staged changes. 3. Record actual spend. 4. Only then close teardown and prepare the first-customer environment.
+
+### Recovery closure (owner-supplied evidence, 16 Nov)
+Technical recovery PASS (run 43783158019). Infrastructure cleanup PASS: ChatGPT's connected Railway account deleted all 11 volumes and verified zero services, volumes, buckets, shared variables and staged changes. Cost reconciliation PASS: Railway Usage dashboard shows $0.0010 for project geocore-disposable-qa-7f3c9a2e81 against the $3.00 cap. `REPLACEMENT-INFRA-RECOVERY` is VERIFIED in the ledger. Scope limit unchanged: replacement-infrastructure recovery of a synthetic bundle is verified; production disaster recovery and PITR are not. The recovery exercise is not to be repeated.
