@@ -42,6 +42,8 @@ teardown() {
   sleep 10
   o="$(gql 'query($p:String!){project(id:$p){volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
   for vid in $(jq -r '.data.project.volumes.edges[].node.id' <<<"$o"); do
+    r="$(gql 'mutation($v:String!,$e:String!){volumeInstanceDelete(volumeId:$v,environmentId:$e)}' "$(jq -nc --arg v "$vid" --arg e "$ENVID" '{v:$v,e:$e}')")"
+    ev "volume instance delete: $(jq -r '.data.volumeInstanceDelete // "error"' <<<"$r") $(gerr "$r")"
     r="$(gql 'mutation($v:String!){volumeDelete(volumeId:$v)}' "$(jq -nc --arg v "$vid" '{v:$v}')")"
     ev "volume delete: $(jq -r '.data.volumeDelete // "error"' <<<"$r") $(gerr "$r")"
   done
