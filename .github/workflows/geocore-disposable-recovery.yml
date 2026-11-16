@@ -10,7 +10,7 @@ on:
       mode:
         description: "verify (read-only disposable token scope check) | probe-qa-template (read-only) | capture (QA container task: matched capture, emits the verified bundle; ends with exact-SHA QA restoration) | recover (provision, restore from the bundle only, verify, ALWAYS tear down) | teardown (verify/force empty)"
         type: choice
-        options: [verify, probe-qa-template, capture, recover, teardown, probe-app]
+        options: [verify, probe-qa-template, capture, recover, teardown, probe-app, inventory]
         default: verify
       inspect_deployment_id:
         description: "teardown mode: also print the status/meta of this deployment id (read-only)"
@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' && inputs.mode != 'recover' && inputs.mode != 'teardown' && inputs.mode != 'probe-app' }}
+    if: ${{ inputs.mode != 'probe-qa-template' && inputs.mode != 'capture' && inputs.mode != 'recover' && inputs.mode != 'teardown' && inputs.mode != 'probe-app' && inputs.mode != 'inventory' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -111,7 +111,7 @@ jobs:
           if-no-files-found: warn
 
   recover:
-    if: ${{ inputs.mode == 'recover' || inputs.mode == 'teardown' || inputs.mode == 'probe-app' }}
+    if: ${{ inputs.mode == 'recover' || inputs.mode == 'teardown' || inputs.mode == 'probe-app' || inputs.mode == 'inventory' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:

@@ -23,10 +23,18 @@ scope_guard() {
     || { ev "REFUSED: token is not scoped to the disposable project/recovery environment"; exit 2; }
 }
 
-inventory() {  # prints counts only
-  local o; o="$(gql 'query($p:String!){project(id:$p){services{edges{node{id name}}} volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
-  ev "inventory services=$(jq '[.data.project.services.edges[]]|length' <<<"$o") volumes=$(jq '[.data.project.volumes.edges[]]|length' <<<"$o") services:[$(jq -r '[.data.project.services.edges[].node.name]|join(",")' <<<"$o")] volumes:[$(jq -r '[.data.project.volumes.edges[].node.name]|join(",")' <<<"$o")]"
-  jq -e '([.data.project.services.edges[]]|length)==0 and ([.data.project.volumes.edges[]]|length)==0' <<<"$o" >/dev/null
+inventory() {  # read-only; prints exact ids and names; exit 0 only when services, volumes, buckets and staged changes are all zero
+  local o b st rc=0
+  o="$(gql 'query($p:String!){project(id:$p){services{edges{node{id name}}} volumes{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')")"
+  ev "inventory services=$(jq '[.data.project.services.edges[]]|length' <<<"$o") volumes=$(jq '[.data.project.volumes.edges[]]|length' <<<"$o")"
+  jq -r '.data.project.services.edges[].node|"  service \(.id) \(.name)"' <<<"$o" | tee -a "$EVID"
+  jq -r '.data.project.volumes.edges[].node|"  volume  \(.id) \(.name)"' <<<"$o" | tee -a "$EVID"
+  jq -e '([.data.project.services.edges[]]|length)==0 and ([.data.project.volumes.edges[]]|length)==0' <<<"$o" >/dev/null || rc=1
+  b="$(gql 'query($p:String!,$e:String!){project(id:$p){buckets{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')" 2>/dev/null)"
+  if [[ -n "$(jq -r '.data.project.buckets // empty' <<<"$b")" ]]; then ev "  buckets=$(jq '[.data.project.buckets.edges[]]|length' <<<"$b")"; jq -e '[.data.project.buckets.edges[]]|length==0' <<<"$b" >/dev/null || rc=1; else ev "  buckets: query not available to this token ($(gerr "$b" | cut -c1-120))"; fi
+  st="$(gql 'query($e:String!){environmentStagedChanges(environmentId:$e){id}}' "$(jq -nc --arg e "$ENVID" '{e:$e}')" 2>/dev/null)"
+  if [[ -n "$(jq -r '.data // empty' <<<"$st")" ]]; then ev "  staged changes: $(jq -c '.data.environmentStagedChanges' <<<"$st" | cut -c1-120)"; else ev "  staged changes: query not available to this token ($(gerr "$st" | cut -c1-120))"; fi
+  return $rc
 }
 
 svc_id() { gql 'query($p:String!){project(id:$p){services{edges{node{id name}}}}}' "$(jq -nc --arg p "$PROJ" '{p:$p}')" | jq -r --arg n "$1" '.data.project.services.edges[].node|select(.name==$n)|.id'; }
